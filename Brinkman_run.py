@@ -23,7 +23,6 @@ perm_matriz = 100  # md
 dt = 10
 pin = 2
 pout = 1
-
-
+# comentarios
 # BrinkmanIMPES(Nx, _folder_base[0], mu_w, mu_o, perm_matriz, dt, pin, pout)
 BrinkmanIMPESGsmh(_folder_base[0], mu_w, mu_o, perm_matriz, dt)
