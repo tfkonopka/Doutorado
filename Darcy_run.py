@@ -1,12 +1,17 @@
 # from fenics import *
 import matplotlib.pyplot as plt
 import os
-from Darcy_Twophase_Sintetico_deltaP import *
+from Darcy_Twophase_Sintetico_16 import *
+
 
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/sens_mu_variavel/Darcy_canal_muo1",
+    "/home/tfkonopka/results/Canal",
+    "/home/tfkonopka/results/Central",
+    "/home/tfkonopka/results/vugg_4",
+    "/home/tfkonopka/results/vugg_16",
 ]
+
 
 
 for i in _folder_base:
@@ -16,16 +21,18 @@ for i in _folder_base:
         print(error)
 
 
-Nx = 50
+Nx = 100
 mu_w = 0.001
 mu_o = 0.001
 perm_matriz = 100  # md
-perm_vugg = [8000]
+perm_vugg = [6724,21049,23644,47508 ]
 dt = 200
 
 pin = 2
 pout = 1
-i = 0
+
+
+i = 3
 
 start_time = time.time()
 

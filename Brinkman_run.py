@@ -1,12 +1,12 @@
 # from brinkman_biphase_IMPES_gsmh import *  # funcvional
-from Brinkman_Twophase_sintetico_deltaP import *
+# from Brinkman_Twophase_sintetico_deltaP import *
 from brinkman_biphase_IMPES_gsmh import *
 
 import os
 import time
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua/Arapua_17_muo_",
+    "/home/tfkonopka/results/Arapua17_mu_20cp",
 ]
 
 
@@ -20,7 +20,7 @@ Nx = 20
 mu_w = 0.001
 mu_o = 0.02
 perm_matriz = 100  # md
-dt = 10
+dt = 20
 pin = 2
 pout = 1
 # comentarios
