@@ -7,7 +7,7 @@ import ufl
 import os
 
 
-def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1, parada):
+def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1):
     # try:
     #     os.mkdir(dir1)
     # except OSError as error:
@@ -34,8 +34,8 @@ def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1, parada):
         + "Sout"
         + ","
         + "Sdx"
-        + ","
-        + "parada"
+        
+        
     )
     f.write(string)
     f.write("\n")
@@ -59,9 +59,8 @@ def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1, parada):
             + ","
             + str(Sout[i])
             + ","
-            + str(Sdx[i])
-            + ","
-            + str(parada[i])
+            + str(Sdx[i])         
+            
         )
         f.write(string)
         f.write("\n")
@@ -545,7 +544,7 @@ def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
             S_mean_in_vector[step],
             S_mean_out_vector[step],
             S_mean_dx_vector[step],
-            dir1,
+            dir1
         )
 
         step = step + 1
@@ -562,7 +561,7 @@ def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         S_mean_out_vector,
         S_mean_dx_vector,
         dir1,
-        _parada,
+        
     )
 
 
@@ -899,6 +898,5 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         S_mean_in_vector,
         S_mean_out_vector,
         S_mean_dx_vector,
-        dir1,
-        _parada,
+        dir1        
     )

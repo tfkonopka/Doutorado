@@ -311,14 +311,14 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     )
 
     # while t < T:
-    while step < 1e5:
+    while step < 1e6:
         # ===
         t += float(dt)
         solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
 
-        if step % 5 == 0:
+        if step % 100 == 0:
 
             p_file.write(p_, t)
             s_file.write(S, t)
