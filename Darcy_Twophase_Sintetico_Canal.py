@@ -110,7 +110,7 @@ class PiecewiseConstant(UserExpression):
 
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[1], (0.3, 0.7)) and between(x[0], (0.1, 0.9))
+        return between(x[1], (0.4, 0.6)) and between(x[0], (0.1, 0.9))
 
 
 # class Obstacle(SubDomain):

@@ -126,9 +126,30 @@ def F_vugg(s):
 def mu_brinkman(s, mu_o, mu_w):
     return s * mu_w + (1.0 - s) * mu_o
 
+
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
+        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.2, 0.430940108))
+
+
+class Obstacle1(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.6, 0.830940108))
+
+
+class Obstacle2(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.6, 0.830940108)) and between(x[0], (0.6, 0.830940108))
+
+
+# class Obstacle3(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.6, 0.8)) and between(x[0], (0.2, 0.4))
+
+
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
 
 # class Obstacle(SubDomain):
 #     def inside(self, x, on_boundary):
@@ -149,25 +170,6 @@ class Obstacle(SubDomain):
 #     def inside(self, x, on_boundary):
 #         return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))
 
-
-# class Obstacle(SubDomain):
-#     def inside(self, x, on_boundary):
-#         return between(x[1], (0.2, 0.4)) and between(x[0], (0.2, 0.4))
-
-
-# class Obstacle1(SubDomain):
-#     def inside(self, x, on_boundary):
-#         return between(x[1], (0.2, 0.4)) and between(x[0], (0.6, 0.8))
-
-
-# class Obstacle2(SubDomain):
-#     def inside(self, x, on_boundary):
-#         return between(x[1], (0.6, 0.8)) and between(x[0], (0.6, 0.8))
-
-
-# class Obstacle3(SubDomain):
-#     def inside(self, x, on_boundary):
-#         return between(x[1], (0.6, 0.8)) and between(x[0], (0.2, 0.4))
 
 
 # class Obstacle4(SubDomain):
@@ -304,8 +306,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     nw_inner = 1
 
     obstacle = Obstacle()
-    # obstacle1 = Obstacle1()
-    # obstacle2 = Obstacle2()
+    obstacle1 = Obstacle1()
+    obstacle2 = Obstacle2()
     # obstacle3 = Obstacle3()
     # obstacle4 = Obstacle4()
     # obstacle5 = Obstacle5()
@@ -323,8 +325,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     domains = MeshFunction("size_t", mesh, mesh.topology().dim())
     domains.set_all(marker_outer)
     obstacle.mark(domains, marker_inner)
-    # obstacle1.mark(domains, marker_inner)
-    # obstacle2.mark(domains, marker_inner)
+    obstacle1.mark(domains, marker_inner)
+    obstacle2.mark(domains, marker_inner)
     # obstacle3.mark(domains, marker_inner)
     # obstacle4.mark(domains, marker_inner)
     # obstacle5.mark(domains, marker_inner)

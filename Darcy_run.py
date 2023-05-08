@@ -1,7 +1,7 @@
 # from fenics import *
 import matplotlib.pyplot as plt
 import os
-from Darcy_Twophase_Sintetico_Central import *
+from Darcy_Twophase_Sintetico_16 import *
 
 
 
@@ -21,18 +21,19 @@ for i in _folder_base:
         print(error)
 
 
-Nx = 20
+Nx = 100
 mu_w = 0.001
 mu_o = 0.001
 perm_matriz = 100  # md
-perm_vugg = [6724,21049,23644,47508 ]
+perm_vugg = [6724,21049,23644,47508]
 dt = 200
 
 pin = 2
 pout = 1
 
 
-i = 1
+
+i = 3
 
 start_time = time.time()
 
