@@ -5,7 +5,7 @@ from Darcy_Twophase_Sintetico_deltaP import *
 
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/sens_mu_variavel/Darcy_canal_muo1",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/sens_mu_variavel/Darcy_canal_muo1_teste",
 ]
 
 
@@ -16,11 +16,11 @@ for i in _folder_base:
         print(error)
 
 
-Nx = 50
+Nx = 20
 mu_w = 0.001
 mu_o = 0.001
 perm_matriz = 100  # md
-perm_vugg = [8000]
+perm_vugg = [200]
 dt = 200
 
 pin = 2
