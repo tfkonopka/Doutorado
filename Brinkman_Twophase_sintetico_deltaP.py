@@ -116,9 +116,7 @@ def F(s, mu_rel, no, nw):
     return s ** nw / (s ** nw + mu_rel * (1.0 - s) ** no)
 
 
-class Obstacle(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.3, 0.7)) and between(x[0], (0.0, 1.0))
+
 
 
 def F_vugg(s):
@@ -128,6 +126,9 @@ def F_vugg(s):
 def mu_brinkman(s, mu_o, mu_w):
     return s * mu_w + (1.0 - s) * mu_o
 
+class Obstacle(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
 
 # class Obstacle(SubDomain):
 #     def inside(self, x, on_boundary):
@@ -460,7 +461,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     )
 
     # while t < T:
-    while step < 1e3:
+    while step < 1e4:
         # ===
         t += float(dt)
         solve(a == L, U, bcs)

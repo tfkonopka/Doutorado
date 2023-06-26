@@ -1,6 +1,11 @@
+"Versão com multiplos vugg sintéticos. dt fixo em 200s. "
+
+
 from fenics import *
 import time
 import ufl
+
+
 import os
 
 
@@ -111,6 +116,9 @@ def F(s, mu_rel, no, nw):
     return s ** nw / (s ** nw + mu_rel * (1.0 - s) ** no)
 
 
+
+
+
 def F_vugg(s):
     return s
 
@@ -119,7 +127,114 @@ def mu_brinkman(s, mu_o, mu_w):
     return s * mu_w + (1.0 - s) * mu_o
 
 
-def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
+class Obstacle(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.2, 0.430940108))
+
+
+class Obstacle1(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.6, 0.830940108))
+
+
+class Obstacle2(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.6, 0.830940108)) and between(x[0], (0.6, 0.830940108))
+
+
+# class Obstacle3(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.6, 0.8)) and between(x[0], (0.2, 0.4))
+
+
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
+
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.15, 0.25))
+
+
+# class Obstacle1(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.35, 0.45))
+
+
+# class Obstacle2(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.55, 0.65))
+
+
+# class Obstacle3(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))
+
+
+
+# class Obstacle4(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.15, 0.25))
+
+
+# class Obstacle5(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.35, 0.45))
+
+
+# class Obstacle6(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.55, 0.65))
+
+
+# class Obstacle7(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.75, 0.85))
+
+
+# class Obstacle8(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.15, 0.25))
+
+
+# class Obstacle9(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.35, 0.45))
+
+
+# class Obstacle10(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.55, 0.65))
+
+
+# class Obstacle11(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.75, 0.85))
+
+
+# class Obstacle12(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.15, 0.25))
+
+
+# class Obstacle13(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.35, 0.45))
+
+
+# class Obstacle14(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.55, 0.65))
+
+
+# class Obstacle15(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.75, 0.85))
+
+
+def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
+
+    Ny = Nx
 
     dir1 = _folder_base + "/dir1"
     dir2 = _folder_base + "/dir2"
@@ -142,8 +257,8 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     k_matriz = perm_darcy * mili_darcy
 
     kgf_cm2_to_Pa = 98066.5
-    pin = 2 * kgf_cm2_to_Pa  # Pa
-    pout = kgf_cm2_to_Pa  # Pa
+    pin = pin * kgf_cm2_to_Pa  # Pa
+    pout = pout * kgf_cm2_to_Pa  # Pa
 
     dt = Constant(dt)  # s
 
@@ -157,22 +272,8 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     mu = Constant(mu)
     mu_b = Constant(mu_b)
     t = 0
-    T = 5 * float(dt)
 
-    mesh = Mesh()
-    with XDMFFile(_folder_base + "/mesh/mesh.xdmf") as infile:
-        infile.read(mesh)
-
-    mvc = MeshValueCollection("size_t", mesh, 2)
-    with XDMFFile(_folder_base + "/mesh/domains.xdmf") as infile:
-        infile.read(mvc)
-    Markers = cpp.mesh.MeshFunctionSizet(mesh, mvc)
-
-    mvc = MeshValueCollection("size_t", mesh, 1)
-    with XDMFFile(_folder_base + "/mesh/boundaries.xdmf") as infile:
-        infile.read(mvc)
-    boundaries = cpp.mesh.MeshFunctionSizet(mesh, mvc)
-
+    mesh = UnitSquareMesh(Nx, Ny, "crossed")
     order = 1
     V = FiniteElement("BDM", mesh.ufl_cell(), order)
     Q = FiniteElement("DG", mesh.ufl_cell(), order - 1)
@@ -204,17 +305,66 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     no_inner = 1
     nw_inner = 1
 
+    obstacle = Obstacle()
+    obstacle1 = Obstacle1()
+    obstacle2 = Obstacle2()
+    # obstacle3 = Obstacle3()
+    # obstacle4 = Obstacle4()
+    # obstacle5 = Obstacle5()
+    # obstacle6 = Obstacle6()
+    # obstacle7 = Obstacle7()
+    # obstacle8 = Obstacle8()
+    # obstacle9 = Obstacle9()
+    # obstacle10 = Obstacle10()
+    # obstacle11 = Obstacle11()
+    # obstacle12 = Obstacle12()
+    # obstacle13 = Obstacle13()
+    # obstacle14 = Obstacle14()
+    # obstacle15 = Obstacle15()
+
+    domains = MeshFunction("size_t", mesh, mesh.topology().dim())
+    domains.set_all(marker_outer)
+    obstacle.mark(domains, marker_inner)
+    obstacle1.mark(domains, marker_inner)
+    obstacle2.mark(domains, marker_inner)
+    # obstacle3.mark(domains, marker_inner)
+    # obstacle4.mark(domains, marker_inner)
+    # obstacle5.mark(domains, marker_inner)
+    # obstacle6.mark(domains, marker_inner)
+    # obstacle7.mark(domains, marker_inner)
+    # obstacle8.mark(domains, marker_inner)
+    # obstacle9.mark(domains, marker_inner)
+    # obstacle10.mark(domains, marker_inner)
+    # obstacle11.mark(domains, marker_inner)
+    # obstacle12.mark(domains, marker_inner)
+    # obstacle13.mark(domains, marker_inner)
+    # obstacle14.mark(domains, marker_inner)
+    # obstacle15.mark(domains, marker_inner)
+
     no = {marker_inner: no_inner, marker_outer: no_outer}
     nw = {marker_inner: nw_inner, marker_outer: nw_outer}
 
     VVV = FunctionSpace(mesh, "DG", 0)
 
-    noo = PiecewiseConstant(no, Markers)
+    noo = PiecewiseConstant(no, domains)
     noo_proj = project(noo, VVV)
-    nww = PiecewiseConstant(nw, Markers)
+    nww = PiecewiseConstant(nw, domains)
     nww_proj = project(nww, VVV)
 
     # =========== END DEFINITION OF SPATIALLY-VARYING PARAMETERS ===================
+
+    boundaries = MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
+
+    left = AutoSubDomain(lambda x: near(x[0], 0.0))
+    right = AutoSubDomain(lambda x: near(x[0], 1.0))
+    bottom = AutoSubDomain(lambda x: near(x[1], 0.0))
+    top = AutoSubDomain(lambda x: near(x[1], 1.0))
+
+    # Define boundary markers
+    left.mark(boundaries, 1)
+    top.mark(boundaries, 2)
+    right.mark(boundaries, 3)
+    bottom.mark(boundaries, 4)
 
     bc1 = DirichletBC(W.sub(0), Constant((1.0e-6, 0.0)), boundaries, 1)
     bc2 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 2)
@@ -224,7 +374,9 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     bcs = [bc1, bc2, bc4]  # velocity BC
 
     ds = Measure("ds", domain=mesh, subdomain_data=boundaries)
-    dx = Measure("dx", domain=mesh, subdomain_data=Markers)
+    dx = Measure("dx", domain=mesh, subdomain_data=domains)
+
+    File(dir1 + "/domains.pvd") << domains
 
     alpha = 35
     h = CellDiameter(mesh)
@@ -311,15 +463,14 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     )
 
     # while t < T:
-    while step < 1e6:
+    while step < 1e4:
         # ===
         t += float(dt)
         solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
 
-        if step % 100 == 0:
-
+        if step % 50 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
@@ -355,7 +506,7 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
             Q_dot_vector[step] - Qdotw_vector[step]
         )  # vazão de óleo na saída do meio poroso
 
-        pin = assemble(p_ * ds(1)) / A_in  # pressão média na entrada
+        pin = assemble(p_ * ds(1))  # pressão média na entrada
         pin_vector.append(pin)  # vetor de pressão média na entrada por
 
         vector_step.append(step)
@@ -395,8 +546,6 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
 
         step = step + 1
 
-    print(f"pressao in = {pin}")
-    print(f"delta pressao = {pin - pout}")
     DataRecord(
         t_cumulative,
         dt_vector,
