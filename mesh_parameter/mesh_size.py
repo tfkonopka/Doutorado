@@ -25,6 +25,7 @@ def mesh_size(caminho):
     order = 1
     V = FiniteElement("BDM", mesh.ufl_cell(), order)
     Q = FiniteElement("DG", mesh.ufl_cell(), order - 1)
+    QQ = FunctionSpace(mesh, Q)
 
     Element = V * Q
     W = FunctionSpace(mesh, Element)
@@ -35,8 +36,11 @@ def mesh_size(caminho):
     h_max = mesh.hmax()
     h_min = mesh.hmin()
     n_ele = mesh.num_cells()
+    dof_num_W = W.dim()
 
-    print(h_max, h_min, n_ele)
+    dof_num_Q = QQ.dim()
+
+    print(h_max, h_min, n_ele, dof_num_W, dof_num_Q)
 
 
 mesh_size(_folder_base)
