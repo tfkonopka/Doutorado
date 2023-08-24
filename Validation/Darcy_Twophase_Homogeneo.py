@@ -34,8 +34,6 @@ def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1):
         + "Sout"
         + ","
         + "Sdx"
-        
-        
     )
     f.write(string)
     f.write("\n")
@@ -59,8 +57,7 @@ def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1):
             + ","
             + str(Sout[i])
             + ","
-            + str(Sdx[i])         
-            
+            + str(Sdx[i])
         )
         f.write(string)
         f.write("\n")
@@ -544,7 +541,7 @@ def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
             S_mean_in_vector[step],
             S_mean_out_vector[step],
             S_mean_dx_vector[step],
-            dir1
+            dir1,
         )
 
         step = step + 1
@@ -561,13 +558,12 @@ def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         S_mean_out_vector,
         S_mean_dx_vector,
         dir1,
-        
     )
 
 
 def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
-    Ny = Nx
+    Ny = 10
     dir0 = _folder_base + "/Darcy_2_domai_RT"
     dir1 = dir0 + "/dir1"
     dir2 = dir0 + "/dir2"
@@ -644,10 +640,10 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
     no_outer = 2
     nw_outer = 2
-    no_inner = 1
-    nw_inner = 1
+    no_inner = 2
+    nw_inner = 2
 
-    obstacle = Obstacle()
+    # obstacle = Obstacle()
     # obstacle1 = Obstacle1()
     # obstacle2 = Obstacle2()
     # obstacle3 = Obstacle3()
@@ -666,7 +662,7 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
     Markers = MeshFunction("size_t", mesh, mesh.topology().dim())
     Markers.set_all(marker_outer)
-    obstacle.mark(Markers, marker_inner)
+    # obstacle.mark(Markers, marker_inner)
     # obstacle1.mark(Markers, marker_inner)
     # obstacle2.mark(Markers, marker_inner)
     # obstacle3.mark(Markers, marker_inner)
@@ -735,17 +731,17 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
     a = (
         inner(v, lmbdainv(s0, mu_w, mu_o, no_inner, nw_inner) * Kinv_matriz * u) * dx(0)
-        + inner(v, lmbdainv(s0, mu_w, mu_o, no_outer, nw_outer) * Kinv_vugg * u) * dx(1)
-        - div(v) * p * dx(1)
+        # + inner(v, lmbdainv(s0, mu_w, mu_o, no_outer, nw_outer) * Kinv_vugg * u) * dx(1)
+        # - div(v) * p * dx(1)
         - div(v) * p * dx(0)
         + div(u) * q * dx(0)
-        + div(u) * q * dx(1)
+        # + div(u) * q * dx(1)
         # + stab
     )
 
     L = (
         inner(f, v) * dx(0)
-        + inner(f, v) * dx(1)
+        # + inner(f, v) * dx(1)
         # - pin * dot(v, n) * ds(1)
         - pout * dot(v, n) * ds(3)
     )
@@ -759,7 +755,7 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
     L3 = (
         phi * r * (s - s0) * dx(0)
-        + r * (s - s0) * dx(1)
+        # + r * (s - s0) * dx(1)
         - dt * inner(grad(r), F(s0, mu_rel, noo_proj, nww_proj) * u_) * dx
         + dt * r * F(s0, mu_rel, no_outer, nw_outer) * un * ds
         + stabilisation
@@ -810,7 +806,7 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
-        if step % 50 == 0:
+        if step % 1 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
@@ -850,9 +846,9 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
         vector_step.append(step)
 
-        if S_mean_out_vector[step] > 0.3:
+        if S_mean_out_vector[step] > 0.01:
             parada = Qdoto_vector[step] / Qdotw_vector[step]
-            if parada < 0.05:
+            if parada < 0.95:
                 break
         else:
             parada = 1
@@ -898,5 +894,5 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         S_mean_in_vector,
         S_mean_out_vector,
         S_mean_dx_vector,
-        dir1        
+        dir1,
     )
