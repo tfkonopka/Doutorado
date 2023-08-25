@@ -466,7 +466,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         solve(a_s == L_f, S)
         s0.assign(S)
 
-        if step % 50 == 0:
+        if step % 1 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
@@ -507,9 +507,9 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
         vector_step.append(step)
 
-        if S_mean_out_vector[step] > 0.3:
+        if S_mean_out_vector[step] > 0.01:
             parada = Qdoto_vector[step] / Qdotw_vector[step]
-            if parada < 0.05:
+            if parada < 0.95:
                 break
         else:
             parada = 1
