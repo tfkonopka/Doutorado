@@ -1,11 +1,10 @@
-
-from Brinkman_Twophase_sintetico_vugg_3 import *
+from Brinkman_Twophase_sintetico_deltaP import *
 
 import os
 import time
 
 _folder_base = [
-    "/home/tfkonopka/results/Brinkman_Sintetico_Vugg_3",
+    "/home/tfk/Desktop/results/Validation/Brinkman_canal_mesh_80_80",
 ]
 
 
@@ -15,7 +14,7 @@ for i in _folder_base:
     except OSError as error:
         print(error)
 
-Nx = 100
+Nx = 80
 mu_w = 0.001
 mu_o = 0.001
 perm_matriz = 100  # md

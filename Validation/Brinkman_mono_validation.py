@@ -19,8 +19,7 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
 
     dir2 = caminho + "/monophase"
     num_refinements = 3
-    mesh = RectangleMesh(Point(0, 0), Point(0.025, 0.1), Nx, Ny, "crossed")
-
+    mesh = RectangleMesh(Point(0, 0), Point(1, 1), Nx, Ny, "right")
     order = 1
     V = FiniteElement("BDM", mesh.ufl_cell(), order)
     Q = FiniteElement("DG", mesh.ufl_cell(), order - 1)
@@ -34,9 +33,9 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     boundaries = MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
 
     left = AutoSubDomain(lambda x: near(x[0], 0.0))
-    right = AutoSubDomain(lambda x: near(x[0], 0.025))
+    right = AutoSubDomain(lambda x: near(x[0], 1.0))
     bottom = AutoSubDomain(lambda x: near(x[1], 0.0))
-    top = AutoSubDomain(lambda x: near(x[1], 0.1))
+    top = AutoSubDomain(lambda x: near(x[1], 1.0))
 
     # Define boundary markers
     left.mark(boundaries, 1)

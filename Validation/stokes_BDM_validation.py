@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 Nx = 50
 Ny = 400
 # Load mesh and subdomains
-mesh = UnitSquareMesh(Nx, Ny, "crossed")
+mesh = UnitSquareMesh(Nx, Ny)
 n = FacetNormal(mesh)
 
 order = 1
