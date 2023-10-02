@@ -12,7 +12,7 @@ from Darcy_Twophase_Homogeneo import *
 # ]
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Darcy",
+    "/home/tfk/Desktop/results/Darcy/Mesh250",
 ]
 
 for i in _folder_base:
@@ -22,9 +22,9 @@ for i in _folder_base:
         print(error)
 
 
-Nx = 500
+Nx = 250
 mu_w = 0.001
-mu_o = 0.002
+mu_o = 0.001
 perm_matriz = 100  # md
 perm_vugg = [8000]
 dt = 50

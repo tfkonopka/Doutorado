@@ -5,9 +5,114 @@ import ufl
 # from brinkman_biphase_IMPES_v2_lib import *
 
 
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
+
+
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.4, 0.6)) and between(x[0], (0.1, 0.9))
+
+
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.2, 0.4)) and between(x[0], (0.2, 0.4))
+
+
+# class Obstacle1(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.2, 0.4)) and between(x[0], (0.6, 0.8))
+
+
+# class Obstacle2(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.6, 0.8)) and between(x[0], (0.6, 0.8))
+
+
+# class Obstacle3(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.6, 0.8)) and between(x[0], (0.2, 0.4))
+
+
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
+        return between(x[1], (0.15, 0.25)) and between(x[0], (0.15, 0.25))
+
+
+class Obstacle1(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.15, 0.25)) and between(x[0], (0.35, 0.45))
+
+
+class Obstacle2(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.15, 0.25)) and between(x[0], (0.55, 0.65))
+
+
+class Obstacle3(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))  #
+
+
+class Obstacle4(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.35, 0.45)) and between(x[0], (0.15, 0.25))
+
+
+class Obstacle5(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.35, 0.45)) and between(x[0], (0.35, 0.45))
+
+
+class Obstacle6(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.35, 0.45)) and between(x[0], (0.55, 0.65))
+
+
+class Obstacle7(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.35, 0.45)) and between(x[0], (0.75, 0.85))
+
+
+class Obstacle8(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.55, 0.65)) and between(x[0], (0.15, 0.25))
+
+
+class Obstacle9(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.55, 0.65)) and between(x[0], (0.35, 0.45))
+
+
+class Obstacle10(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.55, 0.65)) and between(x[0], (0.55, 0.65))
+
+
+class Obstacle11(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.55, 0.65)) and between(x[0], (0.75, 0.85))
+
+
+class Obstacle12(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.75, 0.85)) and between(x[0], (0.15, 0.25))
+
+
+class Obstacle13(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.75, 0.85)) and between(x[0], (0.35, 0.45))
+
+
+class Obstacle14(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.75, 0.85)) and between(x[0], (0.55, 0.65))
+
+
+class Obstacle15(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[1], (0.75, 0.85)) and between(x[0], (0.75, 0.85))
 
 
 def tensor_jump(v, n):
@@ -15,10 +120,10 @@ def tensor_jump(v, n):
 
 
 def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
-
     start_time = time.time()
 
     dir2 = caminho + "/monophase"
+    _pout = pout
 
     mesh = UnitSquareMesh(Nx, Ny, "crossed")
 
@@ -45,17 +150,52 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     right.mark(boundaries, 3)
     bottom.mark(boundaries, 4)
 
+    marker_inner = 1
+    marker_outer = 0
+
     obstacle = Obstacle()
+    obstacle1 = Obstacle1()
+    obstacle2 = Obstacle2()
+    obstacle3 = Obstacle3()
+    obstacle4 = Obstacle4()
+    obstacle5 = Obstacle5()
+    obstacle6 = Obstacle6()
+    obstacle7 = Obstacle7()
+    obstacle8 = Obstacle8()
+    obstacle9 = Obstacle9()
+    obstacle10 = Obstacle10()
+    obstacle11 = Obstacle11()
+    obstacle12 = Obstacle12()
+    obstacle13 = Obstacle13()
+    obstacle14 = Obstacle14()
+    obstacle15 = Obstacle15()
+
     domains = MeshFunction("size_t", mesh, mesh.topology().dim())
     domains.set_all(0)
-    obstacle.mark(domains, 1)
+    obstacle.mark(domains, marker_inner)
+    obstacle1.mark(domains, marker_inner)
+    obstacle2.mark(domains, marker_inner)
+    obstacle3.mark(domains, marker_inner)
+    obstacle4.mark(domains, marker_inner)
+    obstacle5.mark(domains, marker_inner)
+    obstacle6.mark(domains, marker_inner)
+    obstacle7.mark(domains, marker_inner)
+    obstacle8.mark(domains, marker_inner)
+    obstacle9.mark(domains, marker_inner)
+    obstacle10.mark(domains, marker_inner)
+    obstacle11.mark(domains, marker_inner)
+    obstacle12.mark(domains, marker_inner)
+    obstacle13.mark(domains, marker_inner)
+    obstacle14.mark(domains, marker_inner)
+    obstacle15.mark(domains, marker_inner)
 
+    bc1 = DirichletBC(W.sub(0), Constant((1.0e-6, 0.0)), boundaries, 1)
     # bc1 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 1)
     bc2 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 2)
     # # # bc3 = DirichletBC(VQ.sub(0), Constant((0.0, 0.0)), boundaries, 3)
     bc4 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 4)
 
-    bcs = [bc2, bc4]  # velocity BC
+    bcs = [bc1, bc2, bc4]  # velocity BC
 
     ds = Measure("ds", domain=mesh, subdomain_data=boundaries)
     dx = Measure("dx", domain=mesh, subdomain_data=domains)
@@ -71,6 +211,7 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
 
     mu = Constant(mu)
     k = Constant(k_matriz2)
+    _pout = pout
     pin = Constant(pin)
     pout = Constant(pout)
     dp = pin - pout
@@ -100,7 +241,7 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     L = (
         inner(f, v) * dx(0)
         + inner(f, v) * dx(1)
-        - pin * dot(v, n) * ds(1)
+        # - pin * dot(v, n) * ds(1)
         - pout * dot(v, n) * ds(3)
     )
 
@@ -118,7 +259,8 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     area = assemble(Constant(1.0) * ds(1))
     Q = assemble(dot(u1, n) * ds(1))
 
-    dp = float(pin - pout)
+    pin_calc = assemble(p1 * ds(1))  # pressão média na entrada
+    dp = pin_calc - _pout
     k_medium = -((Q / (area * dp))) * float(mu)
 
     print(Q)
@@ -127,12 +269,12 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     # plt.show()
 
     f = open(dir2 + "/perm_abs_equivalente" + ".txt", "w")
-    string = "perm_matrix =   " + str(k_matriz)
+    string = "perm_matrix =   " + str(k_matriz2 / mili_darcy)
     f.write(string)
     f.write("\n")
-    string2 = "perm_equivalente =   " + str(k_medium)
+    string2 = "perm_equivalente =   " + str(k_medium / mili_darcy)
     f.write(string2)
     f.write("\n")
-    string3 = "perm_equivalente/perm_matrix =   " + str(k_medium / k_matriz)
+    string3 = "perm_equivalente/perm_matrix =   " + str(k_medium / k_matriz2)
     f.write(string3)
     f.write("\n")
