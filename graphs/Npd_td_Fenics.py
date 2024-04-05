@@ -2,39 +2,57 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 
-_str1 = [
-    "Arapua10_mesh1.txt",
-    "Arapua10_mesh2.txt",
-    "Arapua10_mesh3.txt",
-    "Arapua10_mesh4.txt",
-    "Arapua10_mesh017.txt",
-    "Arapua10_results.txt",
-]
-
-_str2 = [
-    "Arapua10_mesh1",
-    "Arapua10_mesh2",
-    "Arapua10_mesh3",
-    "Arapua10_mesh4",
-    "Arapua10_mesh017",
-    "Arapua10_results",
-]
-
 # _str1 = [
-#     "Arapua17_mesh1.txt",
-#     "Arapua17_mesh2.txt",
-#     "Arapua17_mesh3.txt",
-#     "Arapua17_mesh4.txt",
-#     # "Arapua17_results.txt",
+#     # "Arapua10_mesh1.txt",
+#     # "Arapua10_mesh2.txt",
+#     # "Arapua10_mesh3.txt",
+#     "Arapua10_mesh4.txt",
+#     "Arapua10_mesh017.txt",
+#     "Arapua10_results.txt",
+#     # "Arapua10_mesh6.txt",
+#     "Arapua10_mesh7.txt",
 # ]
 
 # _str2 = [
-#     "Arapua17_mesh1",
-#     "Arapua17_mesh2",
-#     "Arapua17_mesh3",
-#     "Arapua17_mesh4",
-#     # "Arapua17_results",
+#     # "Arapua10_mesh1",
+#     # "Arapua10_mesh2",
+#     # "Arapua10_mesh3",
+#     "Arapua10_mesh4",
+#     "Arapua10_mesh017",
+#     "Arapua10_results",
+#     # "Arapua10_mesh6",
+#     "Arapua10_mesh7",
 # ]
+
+# _str1 = [
+#     # "Arapua17_mesh1.txt",
+#     # "Arapua17_mesh2.txt",
+#     # "Arapua17_mesh3.txt",
+#     "Arapua17_mesh4.txt",
+#     "Arapua17_results.txt",
+#     "Arapua17_mesh6.txt",
+#     "Arapua17_mesh7.txt",
+#     "Arapau17_mesh017.txt",
+# ]
+
+# _str2 = [
+#     # "Arapua17_mesh1",
+#     # "Arapua17_mesh2",
+#     # "Arapua17_mesh3",
+#     "Arapua17_mesh4",
+#     "Arapua17_results",
+#     "Arapua17_mesh6",
+#     "Arapua17_mesh7",
+#     "Arapau17_mesh017",
+# ]
+
+_str1 = [
+    "canal_vertical_mesh80.txt",
+]
+
+_str2 = [
+    "canal_vertical_mesh80",
+]
 
 # _str1 = [
 #     "Arapua24_mesh1.txt",
@@ -42,6 +60,9 @@ _str2 = [
 #     "Arapua24_mesh3.txt",
 #     "Arapua24_mesh4.txt",
 #     "Arapua24_results.txt",
+#     "Arapua24_mesh6.txt",
+#     "Arapua24_mesh7.txt",
+#     "Arapua24_mesh017.txt",
 # ]
 
 
@@ -51,6 +72,9 @@ _str2 = [
 #     "Arapua24_mesh3",
 #     "Arapua24_mesh4",
 #     "Arapua24_results",
+#     "Arapua24_mesh6",
+#     "Arapua24_mesh7",
+#     "Arapua24_mesh017",
 # ]
 
 
@@ -88,14 +112,16 @@ _str2 = [
 
 # _str2 = ["mesh1", "mesh2", "mesh3", "mesh4"]
 
-_caminho = "/home/tfk/Desktop/results/Validation/figuras_tese/Arapua/Arapua_Mesh_test/"
+_caminho = "/home/tfk/Desktop/results/Validation/figuras_tese/DR/"
 
-color = ["b-", "r", "g", "c", "m", "y"]
+color = ["b-", "r", "g", "c", "m", "y", "orange", "purple"]
+# color = ["grey", "grey", "grey", "b", "grey", "grey", "orange", "purple"]
 
-# phi = 0.328  # sintetico
-phi = 1.089  # Arapua10
+phi = 0.328  # sintetico
+# phi = 1.089  # Arapua10
 # phi = 1.581  # Arapua17
 # phi = 1.396  # Arapua24
+# phi = 0.00022508324131127364  # Tomog
 
 
 def DataRecord(td, NpD, pin, _filename):
@@ -124,7 +150,7 @@ def DataRecord_tD_Npd(td, Npd, _filename, _path):
 
 
 def DataRecord_tD_Bsw(td, Bsw, _filename, _path):
-    f = open(_path + "/" + "saida" + "/" + _filename + ".txt", "w")
+    f = open(_path + "saida" + "/" + _filename + ".txt", "w")
     string = "td" + "    " + "Bsw"
     f.write(string)
     f.write("\n")

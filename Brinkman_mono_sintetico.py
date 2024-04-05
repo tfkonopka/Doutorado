@@ -5,6 +5,11 @@ import ufl
 # from brinkman_biphase_IMPES_v2_lib import *
 
 
+class Obstacle(SubDomain):
+    def inside(self, x, on_boundary):
+        return between(x[0], (0.4, 0.6)) and between(x[1], (0.1, 0.9))
+
+
 # class Obstacle(SubDomain):
 #     def inside(self, x, on_boundary):
 #         return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
@@ -35,84 +40,84 @@ import ufl
 #         return between(x[1], (0.6, 0.8)) and between(x[0], (0.2, 0.4))
 
 
-class Obstacle(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.15, 0.25)) and between(x[0], (0.15, 0.25))
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.15, 0.25))
 
 
-class Obstacle1(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.15, 0.25)) and between(x[0], (0.35, 0.45))
+# class Obstacle1(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.35, 0.45))
 
 
-class Obstacle2(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.15, 0.25)) and between(x[0], (0.55, 0.65))
+# class Obstacle2(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.55, 0.65))
 
 
-class Obstacle3(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))  #
+# class Obstacle3(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))  #
 
 
-class Obstacle4(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.35, 0.45)) and between(x[0], (0.15, 0.25))
+# class Obstacle4(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.15, 0.25))
 
 
-class Obstacle5(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.35, 0.45)) and between(x[0], (0.35, 0.45))
+# class Obstacle5(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.35, 0.45))
 
 
-class Obstacle6(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.35, 0.45)) and between(x[0], (0.55, 0.65))
+# class Obstacle6(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.55, 0.65))
 
 
-class Obstacle7(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.35, 0.45)) and between(x[0], (0.75, 0.85))
+# class Obstacle7(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.35, 0.45)) and between(x[0], (0.75, 0.85))
 
 
-class Obstacle8(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.55, 0.65)) and between(x[0], (0.15, 0.25))
+# class Obstacle8(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.15, 0.25))
 
 
-class Obstacle9(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.55, 0.65)) and between(x[0], (0.35, 0.45))
+# class Obstacle9(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.35, 0.45))
 
 
-class Obstacle10(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.55, 0.65)) and between(x[0], (0.55, 0.65))
+# class Obstacle10(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.55, 0.65))
 
 
-class Obstacle11(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.55, 0.65)) and between(x[0], (0.75, 0.85))
+# class Obstacle11(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.55, 0.65)) and between(x[0], (0.75, 0.85))
 
 
-class Obstacle12(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.75, 0.85)) and between(x[0], (0.15, 0.25))
+# class Obstacle12(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.15, 0.25))
 
 
-class Obstacle13(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.75, 0.85)) and between(x[0], (0.35, 0.45))
+# class Obstacle13(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.35, 0.45))
 
 
-class Obstacle14(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.75, 0.85)) and between(x[0], (0.55, 0.65))
+# class Obstacle14(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.55, 0.65))
 
 
-class Obstacle15(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.75, 0.85)) and between(x[0], (0.75, 0.85))
+# class Obstacle15(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.75, 0.85)) and between(x[0], (0.75, 0.85))
 
 
 def tensor_jump(v, n):
@@ -154,40 +159,40 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     marker_outer = 0
 
     obstacle = Obstacle()
-    obstacle1 = Obstacle1()
-    obstacle2 = Obstacle2()
-    obstacle3 = Obstacle3()
-    obstacle4 = Obstacle4()
-    obstacle5 = Obstacle5()
-    obstacle6 = Obstacle6()
-    obstacle7 = Obstacle7()
-    obstacle8 = Obstacle8()
-    obstacle9 = Obstacle9()
-    obstacle10 = Obstacle10()
-    obstacle11 = Obstacle11()
-    obstacle12 = Obstacle12()
-    obstacle13 = Obstacle13()
-    obstacle14 = Obstacle14()
-    obstacle15 = Obstacle15()
+    # obstacle1 = Obstacle1()
+    # obstacle2 = Obstacle2()
+    # obstacle3 = Obstacle3()
+    # obstacle4 = Obstacle4()
+    # obstacle5 = Obstacle5()
+    # obstacle6 = Obstacle6()
+    # obstacle7 = Obstacle7()
+    # obstacle8 = Obstacle8()
+    # obstacle9 = Obstacle9()
+    # obstacle10 = Obstacle10()
+    # obstacle11 = Obstacle11()
+    # obstacle12 = Obstacle12()
+    # obstacle13 = Obstacle13()
+    # obstacle14 = Obstacle14()
+    # obstacle15 = Obstacle15()
 
     domains = MeshFunction("size_t", mesh, mesh.topology().dim())
     domains.set_all(0)
     obstacle.mark(domains, marker_inner)
-    obstacle1.mark(domains, marker_inner)
-    obstacle2.mark(domains, marker_inner)
-    obstacle3.mark(domains, marker_inner)
-    obstacle4.mark(domains, marker_inner)
-    obstacle5.mark(domains, marker_inner)
-    obstacle6.mark(domains, marker_inner)
-    obstacle7.mark(domains, marker_inner)
-    obstacle8.mark(domains, marker_inner)
-    obstacle9.mark(domains, marker_inner)
-    obstacle10.mark(domains, marker_inner)
-    obstacle11.mark(domains, marker_inner)
-    obstacle12.mark(domains, marker_inner)
-    obstacle13.mark(domains, marker_inner)
-    obstacle14.mark(domains, marker_inner)
-    obstacle15.mark(domains, marker_inner)
+    # obstacle1.mark(domains, marker_inner)
+    # obstacle2.mark(domains, marker_inner)
+    # obstacle3.mark(domains, marker_inner)
+    # obstacle4.mark(domains, marker_inner)
+    # obstacle5.mark(domains, marker_inner)
+    # obstacle6.mark(domains, marker_inner)
+    # obstacle7.mark(domains, marker_inner)
+    # obstacle8.mark(domains, marker_inner)
+    # obstacle9.mark(domains, marker_inner)
+    # obstacle10.mark(domains, marker_inner)
+    # obstacle11.mark(domains, marker_inner)
+    # obstacle12.mark(domains, marker_inner)
+    # obstacle13.mark(domains, marker_inner)
+    # obstacle14.mark(domains, marker_inner)
+    # obstacle15.mark(domains, marker_inner)
 
     bc1 = DirichletBC(W.sub(0), Constant((1.0e-6, 0.0)), boundaries, 1)
     # bc1 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 1)

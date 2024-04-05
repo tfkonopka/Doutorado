@@ -9,7 +9,7 @@ import numpy as np
 
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[1], (0.4, 0.6)) and between(x[0], (0.1, 0.9))
+        return between(x[0], (0.4, 0.6)) and between(x[1], (0.1, 0.9))
 
 
 # class Obstacle(SubDomain):
@@ -135,7 +135,7 @@ def perm_2k(perm_m, perm_v):
     pin = Constant(pin)
     pout = Constant(pout)
 
-    mesh = UnitSquareMesh(10, 10, "crossed")
+    mesh = UnitSquareMesh(100, 100, "crossed")
 
     # Define function spaces and trial/test functions
     V = FiniteElement("BDM", mesh.ufl_cell(), 1)  # velocity space
@@ -276,25 +276,25 @@ def DataRecord(k, perm_vugg, erro, perm_brinkman, caso, _folder):
 
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal_perm1000/",
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal_perm10/",
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal_perm1/",
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal/",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal_vertica_perm1/",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal_vertica_perm10/",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal_vertica_perm100/",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/Mono_Brinkman/canal_vertica_perm1000/",
 ]
 
 
 caso1 = "array_perm_darcy"
 perm_brinkman = [
-    2389.44,
-    23.8944,
-    2.38944,
-    238.944,
+    1.2336643232745272,
+    12.336643232745272,
+    123.36643232745272,
+    1233.6643232745272,
 ]  # CANAL
-perm_matrix = [1000, 10, 1, 100]
+perm_matrix = [1, 10, 100, 1000]
 num_values = 100
 
-lim_inf = [1000, 10, 1, 100]
-lim_sup = [1e8, 1e6, 1e5, 1e7]
+lim_inf = [1, 10, 100, 1000]
+lim_sup = [1e5, 1e6, 1e7, 1e8]
 
 k = []
 erro = []

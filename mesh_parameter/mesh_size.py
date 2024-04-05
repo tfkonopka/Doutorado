@@ -1,13 +1,10 @@
 from fenics import *
 
 
-_folder_base = (
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua/teste_malha/Arapua17"
-)
+_folder_base = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/RD/DR_am_8_1mD"
 
 
 def mesh_size(caminho):
-
     mesh = Mesh()
     with XDMFFile(caminho + "/mesh/mesh.xdmf") as infile:
         infile.read(mesh)

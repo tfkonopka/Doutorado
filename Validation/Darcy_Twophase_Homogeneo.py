@@ -216,16 +216,15 @@ def tensor_jump(v, n):
 
 
 def lmbdainv(s, mu_w, mu_o, no, nw):
-    return 1.0 / ((s ** nw) / mu_w + ((1.0 - s) ** no) / mu_o)
+    return 1.0 / ((s**nw) / mu_w + ((1.0 - s) ** no) / mu_o)
 
 
 # Fractional flow function
 def F(s, mu_rel, no, nw):
-    return s ** nw / (s ** nw + mu_rel * (1.0 - s) ** no)
+    return s**nw / (s**nw + mu_rel * (1.0 - s) ** no)
 
 
 def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
-
     Ny = Nx
     dir0 = _folder_base + "/Darcy_2_domain"
     dir1 = dir0 + "/dir1"
@@ -562,7 +561,6 @@ def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
 
 def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
-
     Ny = 10
     dir0 = _folder_base + "/Darcy_2_domai_RT"
     dir1 = dir0 + "/dir1"
@@ -638,10 +636,10 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
     marker_inner = 1
     marker_outer = 0
 
-    no_outer = 2
-    nw_outer = 2
-    no_inner = 2
-    nw_inner = 2
+    no_outer = 1.94
+    nw_outer = 0.78
+    no_inner = 1.94
+    nw_inner = 0.78
 
     # obstacle = Obstacle()
     # obstacle1 = Obstacle1()
@@ -800,13 +798,13 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         "time", "dt", "Qo", "Qw", "pin", "pout", "Vinj", "Sin", "Sout", "Sdx", dir1
     )
     # while t < T:
-    while step < 1e5:
+    while step < 1e6:
         # ===
         t += float(dt)
         solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
-        if step % 1 == 0:
+        if step % 20 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
@@ -846,9 +844,9 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
         vector_step.append(step)
 
-        if S_mean_out_vector[step] > 0.01:
+        if S_mean_out_vector[step] > 0.3:
             parada = Qdoto_vector[step] / Qdotw_vector[step]
-            if parada < 0.95:
+            if parada < 0.05:
                 break
         else:
             parada = 1

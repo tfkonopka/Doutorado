@@ -103,12 +103,12 @@ def tensor_jump(v, n):
 
 
 def lmbdainv(s, mu_w, mu_o, no, nw):
-    return 1.0 / ((s ** nw) / mu_w + ((1.0 - s) ** no) / mu_o)
+    return 1.0 / ((s**nw) / mu_w + ((1.0 - s) ** no) / mu_o)
 
 
 # Fractional flow function
 def F(s, mu_rel, no, nw):
-    return s ** nw / (s ** nw + mu_rel * (1.0 - s) ** no)
+    return s**nw / (s**nw + mu_rel * (1.0 - s) ** no)
 
 
 def F_vugg(s):
@@ -120,7 +120,6 @@ def mu_brinkman(s, mu_o, mu_w):
 
 
 def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
-
     dir1 = _folder_base + "/dir1"
     dir2 = _folder_base + "/dir2"
 
@@ -313,13 +312,13 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     # while t < T:
     while step < 1e6:
         # ===
+        _start_time = time.time()
         t += float(dt)
         solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
 
         if step % 100 == 0:
-
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
@@ -394,6 +393,8 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
         )
 
         step = step + 1
+        _end_time = time.time()
+        print(f"time of one iteration = {_end_time - _start_time }")
 
     print(f"pressao in = {pin}")
     print(f"delta pressao = {pin - pout}")

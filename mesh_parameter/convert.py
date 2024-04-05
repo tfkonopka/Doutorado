@@ -3,7 +3,7 @@ from dolfin import *
 import meshio
 
 
-file_in = "arapua_camada17_2m_05_02_length04"
+file_in = "am8_c2_s-1240"
 file_out = "holesuCT"
 
 os.system("gmsh " + file_in + ".geo -2 -o " + file_out + ".msh")
