@@ -5,10 +5,10 @@ from Darcy_Twophase_Sintetico_16 import *
 
 
 _folder_base = [
-    "/home/tfkonopka/results/Canal",
-    "/home/tfkonopka/results/Central",
-    "/home/tfkonopka/results/vugg_4",
-    "/home/tfkonopka/results/vugg_16",
+    "/home/tfk/Desktop/results/testeufl",
+    #     "/home/tfkonopka/results/Central",
+    #     "/home/tfkonopka/results/vugg_4",
+    #     "/home/tfkonopka/results/vugg_16",
 ]
 
 
@@ -30,8 +30,7 @@ pin = 2
 pout = 1
 
 
-i = 3
-
+i = 0
 start_time = time.time()
 
 

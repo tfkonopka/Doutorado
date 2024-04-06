@@ -1,4 +1,5 @@
 # from Brinkman_Twophase_sintetico_deltaP import *
+
 # from Brinkman_Twophase_sintetico_vugg_3 import *
 
 from brinkman_biphase_IMPES_gsmh import *
@@ -11,6 +12,7 @@ import time
 
 _folder_base = [
     "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/RD/DR_am_8_mesh4",
+    # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/five_spot",
 ]
 
 
@@ -20,7 +22,7 @@ for i in _folder_base:
     except OSError as error:
         print(error)
 
-Nx = 120
+Nx = 50
 Ny = Nx
 mu_w = 0.001
 mu_o = 0.001

@@ -3,7 +3,7 @@
 
 from fenics import *
 import time
-import ufl
+import ufl_legacy as ufl
 import os
 
 
@@ -33,7 +33,7 @@ def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1):
         + ","
         + "Sout"
         + ","
-        + "Sdx"        
+        + "Sdx"
     )
     f.write(string)
     f.write("\n")
@@ -58,7 +58,6 @@ def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1):
             + str(Sout[i])
             + ","
             + str(Sdx[i])
-            
         )
         f.write(string)
         f.write("\n")
@@ -217,12 +216,12 @@ def tensor_jump(v, n):
 
 
 def lmbdainv(s, mu_w, mu_o, no, nw):
-    return 1.0 / ((s ** nw) / mu_w + ((1.0 - s) ** no) / mu_o)
+    return 1.0 / ((s**nw) / mu_w + ((1.0 - s) ** no) / mu_o)
 
 
 # Fractional flow function
 def F(s, mu_rel, no, nw):
-    return s ** nw / (s ** nw + mu_rel * (1.0 - s) ** no)
+    return s**nw / (s**nw + mu_rel * (1.0 - s) ** no)
 
 
 def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
@@ -558,7 +557,7 @@ def DarcyIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         S_mean_in_vector,
         S_mean_out_vector,
         S_mean_dx_vector,
-        dir1
+        dir1,
     )
 
 
@@ -714,8 +713,6 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
 
     ds = Measure("ds", domain=mesh, subdomain_data=boundaries)
     dx = Measure("dx", domain=mesh, subdomain_data=Markers)
-
-    File(dir1 + "/domains.pvd") << Markers
 
     alpha = 35
     h = CellDiameter(mesh)
@@ -895,5 +892,5 @@ def DarcyIMPESRT(Nx, _folder_base, mu_w, mu_o, perm_darcy, perm_vugg, dt):
         S_mean_in_vector,
         S_mean_out_vector,
         S_mean_dx_vector,
-        dir1
+        dir1,
     )

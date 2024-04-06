@@ -2,14 +2,14 @@ from fenics import *
 import matplotlib.pyplot as plt
 import time
 import os
-
+import ufl
 
 import numpy as np
 
 
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[0], (0.3, 0.7)) and between(x[1], (0.3, 0.7))
+        return between(x[0], (0.14644, 0.8535)) and between(x[1], (0.14644, 0.8535))
 
 
 # class Obstacle(SubDomain):
@@ -235,6 +235,8 @@ def perm_2k(perm_m, perm_v):
 
     f = Constant((0.0, 0.0))
     n = FacetNormal(mesh)
+    h = CellDiameter(mesh)
+    print(type(h))
 
     a = (
         +mu / k0 * inner(u, v) * dx(0)
