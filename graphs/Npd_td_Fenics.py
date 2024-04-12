@@ -46,53 +46,49 @@ import numpy as np
 #     "Arapau17_mesh017",
 # ]
 
+# _str1 = [
+#     "canal_vertical_mesh80.txt",
+# ]
+
+# _str2 = [
+# "canal_vertical_mesh80",
+# ]
+
+# _str1 = [
+#     "Arapua_u1.txt",
+#     "Arapua_u2.txt",
+#     "Arapua_u3.txt",
+#     "Arapua_inv.txt",
+#     # "Arapua24_results.txt",
+#     # "Arapua24_mesh6.txt",
+#     # "Arapua24_mesh7.txt",
+#     # "Arapua24_mesh017.txt",
+# ]
+
+
+# _str2 = [
+#     "Arapua_u1",
+#     "Arapua_u2",
+#     "Arapua_u3",
+#     "Arapua_inv",
+#     #     "Arapua24_results",
+#     #     "Arapua24_mesh6",
+#     #     "Arapua24_mesh7",
+#     #     "Arapua24_mesh017",
+# ]
+
+
 _str1 = [
-    "canal_vertical_mesh80.txt",
+    "Central_u1.txt",
+    "Central_u2.txt",
+    "Central_u3.txt",
 ]
 
 _str2 = [
-    "canal_vertical_mesh80",
+    "Central_u1",
+    "Central_u2",
+    "Central_u3",
 ]
-
-# _str1 = [
-#     "Arapua24_mesh1.txt",
-#     "Arapua24_mesh2.txt",
-#     "Arapua24_mesh3.txt",
-#     "Arapua24_mesh4.txt",
-#     "Arapua24_results.txt",
-#     "Arapua24_mesh6.txt",
-#     "Arapua24_mesh7.txt",
-#     "Arapua24_mesh017.txt",
-# ]
-
-
-# _str2 = [
-#     "Arapua24_mesh1",
-#     "Arapua24_mesh2",
-#     "Arapua24_mesh3",
-#     "Arapua24_mesh4",
-#     "Arapua24_results",
-#     "Arapua24_mesh6",
-#     "Arapua24_mesh7",
-#     "Arapua24_mesh017",
-# ]
-
-
-# _str1 = [
-#     "vug4_mesh20.txt",
-#     "vug4_mesh40.txt",
-#     "vug4_mesh80.txt",
-#     "vug4_mesh100.txt",
-#     "vug4_mesh120.txt",
-# ]
-
-# _str2 = [
-#     "mesh_vug4_20",
-#     "mesh_vug4_40",
-#     "mesh_vug4_80",
-#     "mesh_vug4_100",
-#     "mesh_vug4_120",
-# ]
 
 # _str1 = [
 #     "mesh_20.txt",
@@ -112,15 +108,15 @@ _str2 = [
 
 # _str2 = ["mesh1", "mesh2", "mesh3", "mesh4"]
 
-_caminho = "/home/tfk/Desktop/results/Validation/figuras_tese/DR/"
+_caminho = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Banca/"
 
 color = ["b-", "r", "g", "c", "m", "y", "orange", "purple"]
 # color = ["grey", "grey", "grey", "b", "grey", "grey", "orange", "purple"]
 
-phi = 0.328  # sintetico
+# phi = 0.328  # sintetico
 # phi = 1.089  # Arapua10
 # phi = 1.581  # Arapua17
-# phi = 1.396  # Arapua24
+phi = 1.396  # Arapua24
 # phi = 0.00022508324131127364  # Tomog
 
 
@@ -155,7 +151,7 @@ def DataRecord_tD_Bsw(td, Bsw, _filename, _path):
     f.write(string)
     f.write("\n")
     for i in range(len(td)):
-        if i % 50 == 0:
+        if i % 2 == 0:
             string = (
                 "{:.5f}".format((float(td[i])))
                 + "    "
@@ -216,7 +212,7 @@ def td_Npd(time, Qo, Qw):
     Npd = np.array(Npd) / phi
     # Npd = np.array(Npd)
 
-    return td, Npd
+    return np.abs(td), Npd
 
 
 for j in range(len(_str1)):
@@ -234,6 +230,9 @@ for j in range(len(_str1)):
 
     plt.figure(2, figsize=(8, 4))
     plt.plot(td1, Bsw1, color[j], label=_str2[j], linewidth=1)
+
+    plt.figure(3, figsize=(8, 4))
+    plt.plot(td1, Qw1, color[j], label=_str2[j], linewidth=1)
 
 
 # plt.title("Arapua17", fontsize=12)

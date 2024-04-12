@@ -157,17 +157,17 @@ def perm_2k(perm_m, perm_v):
     boundaries = MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
 
     # left = AutoSubDomain(lambda x: near(x[0], 0.0))
-    left = AutoSubDomain(lambda x: between(x[1], (0.0, 0.98)) and near(x[0], 0.0))
-    left2 = AutoSubDomain(lambda x: between(x[1], (0.98, 1.0)) and near(x[0], 0.0))
+    left = AutoSubDomain(lambda x: between(x[1], (0.0, 0.8)) and near(x[0], 0.0))
+    left2 = AutoSubDomain(lambda x: between(x[1], (0.8, 1.0)) and near(x[0], 0.0))
 
     # right = AutoSubDomain(lambda x: near(x[0], 1.0))
 
-    right = AutoSubDomain(lambda x: between(x[1], (0.0, 0.02)) and near(x[0], 1.0))
-    right2 = AutoSubDomain(lambda x: between(x[1], (0.02, 1.0)) and near(x[0], 1.0))
+    right = AutoSubDomain(lambda x: between(x[1], (0.0, 0.2)) and near(x[0], 1.0))
+    right2 = AutoSubDomain(lambda x: between(x[1], (0.2, 1.0)) and near(x[0], 1.0))
 
     # bottom = AutoSubDomain(lambda x: near(x[1], 0.0))
-    bottom = AutoSubDomain(lambda x: between(x[0], (0.0, 0.98)) and near(x[1], 0.0))
-    bottom2 = AutoSubDomain(lambda x: between(x[0], (0.98, 1.0)) and near(x[1], 0.0))
+    bottom = AutoSubDomain(lambda x: between(x[0], (0.0, 0.8)) and near(x[1], 0.0))
+    bottom2 = AutoSubDomain(lambda x: between(x[0], (0.8, 1.0)) and near(x[1], 0.0))
 
     # top = AutoSubDomain(lambda x: near(x[1], 1.0))
     top = AutoSubDomain(lambda x: between(x[0], (0.0, 0.02)) and near(x[1], 1.0))

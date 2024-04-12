@@ -124,7 +124,7 @@ def mu_brinkman(s, mu_o, mu_w):
 
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[0], (0.14644, 0.8535)) and between(x[1], (0.14644, 0.8535))
+        return between(x[0], (0.25, 0.75)) and between(x[1], (0.25, 0.75))
 
 
 def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
@@ -194,8 +194,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     marker_inner = 1
     marker_outer = 0
 
-    no_outer = 2
-    nw_outer = 2
+    no_outer = 3
+    nw_outer = 3
     no_inner = 1
     nw_inner = 1
 
@@ -220,21 +220,21 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     boundaries = MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
 
     # left = AutoSubDomain(lambda x: near(x[0], 0.0))
-    left = AutoSubDomain(lambda x: between(x[1], (0.0, 0.98)) and near(x[0], 0.0))
-    left2 = AutoSubDomain(lambda x: between(x[1], (0.98, 1.0)) and near(x[0], 0.0))
+    left = AutoSubDomain(lambda x: between(x[1], (0.0, 0.95)) and near(x[0], 0.0))
+    left2 = AutoSubDomain(lambda x: between(x[1], (0.95, 1.0)) and near(x[0], 0.0))
 
     # right = AutoSubDomain(lambda x: near(x[0], 1.0))
 
-    right = AutoSubDomain(lambda x: between(x[1], (0.0, 0.02)) and near(x[0], 1.0))
-    right2 = AutoSubDomain(lambda x: between(x[1], (0.02, 1.0)) and near(x[0], 1.0))
+    right = AutoSubDomain(lambda x: between(x[1], (0.0, 0.05)) and near(x[0], 1.0))
+    right2 = AutoSubDomain(lambda x: between(x[1], (0.05, 1.0)) and near(x[0], 1.0))
 
     # bottom = AutoSubDomain(lambda x: near(x[1], 0.0))
-    bottom = AutoSubDomain(lambda x: between(x[0], (0.0, 0.98)) and near(x[1], 0.0))
-    bottom2 = AutoSubDomain(lambda x: between(x[0], (0.98, 1.0)) and near(x[1], 0.0))
+    bottom = AutoSubDomain(lambda x: between(x[0], (0.0, 0.95)) and near(x[1], 0.0))
+    bottom2 = AutoSubDomain(lambda x: between(x[0], (0.95, 1.0)) and near(x[1], 0.0))
 
     # top = AutoSubDomain(lambda x: near(x[1], 1.0))
-    top = AutoSubDomain(lambda x: between(x[0], (0.0, 0.02)) and near(x[1], 1.0))
-    top2 = AutoSubDomain(lambda x: between(x[0], (0.02, 1.0)) and near(x[1], 1.0))
+    top = AutoSubDomain(lambda x: between(x[0], (0.0, 0.05)) and near(x[1], 1.0))
+    top2 = AutoSubDomain(lambda x: between(x[0], (0.05, 1.0)) and near(x[1], 1.0))
     # Define boundary markers
 
     left.mark(boundaries, 1)
@@ -299,7 +299,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
     L3 = (
         phi * r * (s - s0) * dx(0)
-        + r * (s - s0) * dx(1)
+        + 0.8 * r * (s - s0) * dx(1)
         - dt * inner(grad(r), F(s0, mu_rel, noo_proj, nww_proj) * u_) * dx(0)
         - dt * inner(grad(r), F_vugg(s0) * u_) * dx(1)
         + dt * r * F(s0, mu_rel, no_outer, nw_outer) * un * ds
@@ -359,7 +359,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         solve(a_s == L_f, S)
         s0.assign(S)
 
-        if step % 10 == 0:
+        if step % 1 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
@@ -455,17 +455,17 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     )
 
 
-Nx = 50
+Nx = 20
 mu_w = 0.01
 mu_o = 0.01
 perm_darcy = 100
-dt = 200
+dt = 800
 
 pin = 2
 pout = 1
 
 _folder_base = [
-    "/home/tfk/Desktop/results/testeufl2",
+    "/home/tfk/Desktop/results/testeufl2_phi08_vug_n_3",
     #     "/home/tfkonopka/results/Central",
     #     "/home/tfkonopka/results/vugg_4",
     #     "/home/tfkonopka/results/vugg_16",
