@@ -3,7 +3,7 @@
 
 from fenics import *
 import time
-import ufl
+import ufl_legacy as ufl
 
 
 import os
@@ -258,15 +258,15 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
     dt = Constant(dt)  # s
 
-    phi = 1
+    phi = 0.8
     mu_rel = mu_w / mu_o
 
     sbar = Constant(1)
 
-    Kinv = Constant(1 / k_matriz)
+    Kinv = Constant(1 / 1)
 
     mu = Constant(mu)
-    mu_b = Constant(mu_b)
+    mu_b = Constant(10)
     t = 0
 
     mesh = UnitSquareMesh(Nx, Ny, "crossed")
@@ -364,7 +364,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
     bc1 = DirichletBC(W.sub(0), Constant((1.0e-6, 0.0)), boundaries, 1)
     bc2 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 2)
-    # # # bc3 = DirichletBC(VQ.sub(0), Constant((0.0, 0.0)), boundaries, 3)
+    # bc3 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 3)
     bc4 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 4)
 
     bcs = [bc1, bc2, bc4]  # velocity BC
@@ -388,10 +388,12 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     )
 
     a = (
-        mu_brinkman(s0, mu_o=mu_o, mu_w=mu_w) * inner(grad(u), grad(v)) * dx(1)
-        + inner(v, lmbdainv(s0, mu_w, mu_o, no_outer, nw_outer) * Kinv * u) * dx(0)
-        - div(v) * p * dx(1)
-        - div(v) * p * dx(0)
+        mu_b * inner(grad(u), grad(v)) * dx(1)
+        + mu_b * inner(grad(u), grad(v)) * dx(0)
+        + inner(v, u) * dx(0)
+        + inner(v, u) * dx(1)
+        - div(v) / lmbdainv(s0, mu_w, mu_o, no_outer, nw_outer) * Kinv * p * dx(1)
+        - div(v) / lmbdainv(s0, mu_w, mu_o, no_outer, nw_outer) * Kinv * p * dx(0)
         + div(u) * q * dx(0)
         + div(u) * q * dx(1)
         + stab
@@ -413,9 +415,9 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
     L3 = (
         phi * r * (s - s0) * dx(0)
-        + r * (s - s0) * dx(1)
+        + phi * r * (s - s0) * dx(1)
         - dt * inner(grad(r), F(s0, mu_rel, noo_proj, nww_proj) * u_) * dx(0)
-        - dt * inner(grad(r), F_vugg(s0) * u_) * dx(1)
+        - dt * inner(grad(r), F(s0, mu_rel, noo_proj, nww_proj) * u_) * dx(1)
         + dt * r * F(s0, mu_rel, no_outer, nw_outer) * un * ds
         + stabilisation
         + dt * r * un_h * sbar * ds(1)
@@ -466,7 +468,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         solve(a_s == L_f, S)
         s0.assign(S)
 
-        if step % 50 == 0:
+        if step % 1 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)

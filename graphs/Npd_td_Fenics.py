@@ -79,15 +79,17 @@ import numpy as np
 
 
 _str1 = [
-    "Central_u1.txt",
-    "Central_u2.txt",
-    "Central_u3.txt",
+    # "Central_u1.txt",
+    # "Central_u2.txt",
+    # "Central_u3.txt",
+    "fiveSpot.txt",
 ]
 
 _str2 = [
-    "Central_u1",
-    "Central_u2",
-    "Central_u3",
+    # "Central_u1",
+    # "Central_u2",
+    # "Central_u3",
+    "fiveSpot",
 ]
 
 # _str1 = [
@@ -116,7 +118,8 @@ color = ["b-", "r", "g", "c", "m", "y", "orange", "purple"]
 # phi = 0.328  # sintetico
 # phi = 1.089  # Arapua10
 # phi = 1.581  # Arapua17
-phi = 1.396  # Arapua24
+# phi = 1.396  # Arapua24
+phi = 0.275  # Hallack
 # phi = 0.00022508324131127364  # Tomog
 
 

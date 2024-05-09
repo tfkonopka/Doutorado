@@ -220,21 +220,21 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     boundaries = MeshFunction("size_t", mesh, mesh.topology().dim() - 1)
 
     # left = AutoSubDomain(lambda x: near(x[0], 0.0))
-    left = AutoSubDomain(lambda x: between(x[1], (0.0, 0.95)) and near(x[0], 0.0))
-    left2 = AutoSubDomain(lambda x: between(x[1], (0.95, 1.0)) and near(x[0], 0.0))
+    left = AutoSubDomain(lambda x: between(x[1], (0.0, 0.8)) and near(x[0], 0.0))
+    left2 = AutoSubDomain(lambda x: between(x[1], (0.8, 1.0)) and near(x[0], 0.0))
 
     # right = AutoSubDomain(lambda x: near(x[0], 1.0))
 
-    right = AutoSubDomain(lambda x: between(x[1], (0.0, 0.05)) and near(x[0], 1.0))
-    right2 = AutoSubDomain(lambda x: between(x[1], (0.05, 1.0)) and near(x[0], 1.0))
+    right = AutoSubDomain(lambda x: between(x[1], (0.0, 0.2)) and near(x[0], 1.0))
+    right2 = AutoSubDomain(lambda x: between(x[1], (0.02, 1.0)) and near(x[0], 1.0))
 
     # bottom = AutoSubDomain(lambda x: near(x[1], 0.0))
-    bottom = AutoSubDomain(lambda x: between(x[0], (0.0, 0.95)) and near(x[1], 0.0))
-    bottom2 = AutoSubDomain(lambda x: between(x[0], (0.95, 1.0)) and near(x[1], 0.0))
+    bottom = AutoSubDomain(lambda x: between(x[0], (0.0, 0.8)) and near(x[1], 0.0))
+    bottom2 = AutoSubDomain(lambda x: between(x[0], (0.8, 1.0)) and near(x[1], 0.0))
 
     # top = AutoSubDomain(lambda x: near(x[1], 1.0))
-    top = AutoSubDomain(lambda x: between(x[0], (0.0, 0.05)) and near(x[1], 1.0))
-    top2 = AutoSubDomain(lambda x: between(x[0], (0.05, 1.0)) and near(x[1], 1.0))
+    top = AutoSubDomain(lambda x: between(x[0], (0.0, 0.20)) and near(x[1], 1.0))
+    top2 = AutoSubDomain(lambda x: between(x[0], (0.20, 1.0)) and near(x[1], 1.0))
     # Define boundary markers
 
     left.mark(boundaries, 1)
@@ -248,13 +248,14 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
     bc1 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 1)
     bc2 = DirichletBC(W.sub(0), Constant((1.0e-6, 0.0)), boundaries, 2)
-    bc3 = DirichletBC(W.sub(0), Constant((0.0, -1.0e-6)), boundaries, 3)
+    bc3 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 3)
     bc4 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 4)
     bc5 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 5)
     bc8 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 8)
+    bc7 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 7)
     # bc5 = DirichletBC(W.sub(1), Constant(6e8), boundaries, 1)
     # bc6 = DirichletBC(W.sub(1), Constant(0), boundaries, 1)
-    bcs = [bc1, bc2, bc3, bc4, bc5, bc8]
+    bcs = [bc1, bc2, bc3, bc4, bc5, bc7, bc8]
     ds = Measure("ds", domain=mesh, subdomain_data=boundaries)
     dx = Measure("dx", domain=mesh, subdomain_data=domains)
 
@@ -287,7 +288,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         inner(f, v) * dx(0)
         + inner(f, v) * dx(1)
         - pout * dot(v, n) * ds(6)
-        - pout * dot(v, n) * ds(7)
+        # - pout * dot(v, n) * ds(7)
     )
 
     un = 0.5 * (inner(u_, n) + abs(inner(u_, n)))

@@ -3,7 +3,7 @@
 
 from fenics import *
 import time
-import ufl
+import ufl_legacy as ufl
 
 
 import os
@@ -126,28 +126,27 @@ def mu_brinkman(s, mu_o, mu_w):
 
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[1], (0.4, 0.6)) and between(x[0], (0.1, 0.9))
-
-
-# class Obstacle(SubDomain):
-#     def inside(self, x, on_boundary):
-#         return between(x[1], (0.2, 0.4)) and between(x[0], (0.2, 0.4))
+        return between(x[0], (0.4, 0.6)) and between(x[1], (0.1, 0.9))
 
 
 # class Obstacle1(SubDomain):
 #     def inside(self, x, on_boundary):
-#         return between(x[1], (0.2, 0.4)) and between(x[0], (0.6, 0.8))
+#         return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.6, 0.830940108))
 
 
 # class Obstacle2(SubDomain):
 #     def inside(self, x, on_boundary):
-#         return between(x[1], (0.6, 0.8)) and between(x[0], (0.6, 0.8))
+#         return between(x[1], (0.6, 0.830940108)) and between(x[0], (0.6, 0.830940108))
 
 
 # class Obstacle3(SubDomain):
 #     def inside(self, x, on_boundary):
 #         return between(x[1], (0.6, 0.8)) and between(x[0], (0.2, 0.4))
 
+
+# class Obstacle(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.3, 0.7)) and between(x[0], (0.3, 0.7))
 
 # class Obstacle(SubDomain):
 #     def inside(self, x, on_boundary):
@@ -166,7 +165,7 @@ class Obstacle(SubDomain):
 
 # class Obstacle3(SubDomain):
 #     def inside(self, x, on_boundary):
-#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))  #
+#         return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))
 
 
 # class Obstacle4(SubDomain):
@@ -246,7 +245,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         print(error)
 
     mu = (mu_o + mu_w) / 2  # Pa.s
-    mu_b = (mu_o + mu_w) / 2  # Pa.s
+    mu_b = 0.0000001  # Pa.s
 
     mili_darcy = 9.86923e-16  # Porous media permeability convertion factor md [m2] (1 Darcy = E-12 m2)
 
@@ -263,8 +262,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
     sbar = Constant(1)
 
-    Kinv = Constant(1 / k_matriz)
-
+    Kinv = Constant(1 / 1)
+    mu_b = 0.000001
     mu = Constant(mu)
     mu_b = Constant(mu_b)
     t = 0
@@ -364,10 +363,10 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
 
     bc1 = DirichletBC(W.sub(0), Constant((1.0e-6, 0.0)), boundaries, 1)
     bc2 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 2)
-    # # # bc3 = DirichletBC(VQ.sub(0), Constant((0.0, 0.0)), boundaries, 3)
+    bc3 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 3)
     bc4 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 4)
 
-    bcs = [bc1, bc2, bc4]  # velocity BC
+    bcs = [bc1, bc3, bc2, bc4]  # velocity BC
 
     ds = Measure("ds", domain=mesh, subdomain_data=boundaries)
     dx = Measure("dx", domain=mesh, subdomain_data=domains)
@@ -388,8 +387,10 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     )
 
     a = (
-        mu_brinkman(s0, mu_o=mu_o, mu_w=mu_w) * inner(grad(u), grad(v)) * dx(1)
-        + inner(v, lmbdainv(s0, mu_w, mu_o, no_outer, nw_outer) * Kinv * u) * dx(0)
+        mu_b * inner(grad(u / F(s0, mu_rel, noo_proj, nww_proj)), grad(v)) * dx(1)
+        + inner(v, Kinv * u / F(s0, mu_rel, noo_proj, nww_proj)) * dx(0)
+        + mu_b * inner(grad(u / F(s0, mu_rel, noo_proj, nww_proj)), grad(v)) * dx(0)
+        + inner(v, Kinv * u / F(s0, mu_rel, noo_proj, nww_proj)) * dx(1)
         - div(v) * p * dx(1)
         - div(v) * p * dx(0)
         + div(u) * q * dx(0)
@@ -401,7 +402,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         inner(f, v) * dx(0)
         + inner(f, v) * dx(1)
         # - pin * dot(v, n) * ds(1)
-        - pout * dot(v, n) * ds(3)
+        # - pout * dot(v, n) * ds(3)
     )
 
     un = 0.5 * (inner(u_, n) + abs(inner(u_, n)))
@@ -412,11 +413,11 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     )
 
     L3 = (
-        phi * r * (s - s0) * dx(0)
+        r * (s - s0) * dx(0)
         + r * (s - s0) * dx(1)
-        - dt * inner(grad(r), F(s0, mu_rel, noo_proj, nww_proj) * u_) * dx(0)
-        - dt * inner(grad(r), F_vugg(s0) * u_) * dx(1)
-        + dt * r * F(s0, mu_rel, no_outer, nw_outer) * un * ds
+        - dt * inner(grad(r), u_) * dx(0)
+        - dt * inner(grad(r), u_) * dx(1)
+        + dt * r * un * ds
         + stabilisation
         + dt * r * un_h * sbar * ds(1)
     )
@@ -427,131 +428,50 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     p_file = XDMFFile(dir2 + "/pressure.xdmf")
     s_file = XDMFFile(dir2 + "/saturation.xdmf")
 
-    s_txt = []
-
-    Q_dot_vector = []
-    S_mean_dx_vector = []
-    S_mean_in_vector = []
-    S_mean_out_vector = []
-    Qinj = 0
-    Nw_inj = []
-    Qdotw_vector = []
-    Qdoto_vector = []
-    vector_step = []
-    t_cumulative = []
-
     step = 0
-    parada = 1
-    pin_vector = []
-    dt_vector = []
-
-    A_in = float(assemble(1 * ds(1)))
-    Len = float(assemble(1 * ds(2)))
-    Area = float(assemble(1 * dx))
-
-    if os.path.exists(dir1 + "/results_" + ".txt"):
-        os.remove(dir1 + "/results_" + ".txt")
-    else:
-        print("The file does not exist")
-
-    DataRecord2(
-        "time", "dt", "Qo", "Qw", "pin", "pout", "Vinj", "Sin", "Sout", "Sdx", dir1
-    )
 
     # while t < T:
-    while step < 1e4:
+    while step < 2e2:
         # ===
+        _start_time = time.time()
+
         t += float(dt)
         solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
 
-        if step % 50 == 0:
+        if step % 2 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
 
-        t_cumulative.append(float(t))
-        dt_vector.append(dt)
-
-        S_mean_in_vector.append(
-            assemble(S * ds(1)) / A_in
-        )  # saturação média na entrada do meio poroso em t
-        S_mean_out_vector.append(
-            assemble(S * ds(3)) / A_in
-        )  # saturação média na saida do meio poroso em t
-        S_mean_dx_vector.append(
-            assemble(S * dx) / Area
-        )  # saturação média do meio poroso em t
-        Q_dot_vector.append(
-            float(-assemble(dot(u_, n) * ds(1)))
-        )  # vetor com a vazão instante por passo de t
-
-        Qinj = Qinj + Q_dot_vector[step] * float(
-            dt
-        )  # vazão acumulada total de injeção final
-        Nw_inj.append(Qinj)
-
-        Qdotw_vector.append(
-            assemble(F(s0, mu_rel, noo_proj, nww_proj) * dot(u_, n) * ds(3))
-        )  # vazão de água na saída do meio poroso
-
-        print(f"Qdotw_vector[step] = {Qdotw_vector[step]}")
-
-        Qdoto_vector.append(
-            Q_dot_vector[step] - Qdotw_vector[step]
-        )  # vazão de óleo na saída do meio poroso
-
-        pin = assemble(p_ * ds(1))  # pressão média na entrada
-        pin_vector.append(pin)  # vetor de pressão média na entrada por
-
-        vector_step.append(step)
-
-        if S_mean_out_vector[step] > 0.3:
-            parada = Qdoto_vector[step] / Qdotw_vector[step]
-            if parada < 0.05:
-                break
-        else:
-            parada = 1
-
-        print(f"S_mean_dx_vector = {S_mean_dx_vector[step]}")
-        print(f"S_mean_in_vector[{step}]  = {S_mean_in_vector[step]}  ")
-        print(f"S_mean_out_vector[{step}] = {S_mean_out_vector[step]} ")
-
-        print(f"step = {step}")
-        print(f"parada = {parada}")
-
-        uin = assemble(dot(u_, n) * ds(1))
-        uout = assemble(dot(u_, n) * ds(3))
-        erro_mat_bal = abs(abs(uin) - abs(uout))
-        print(f"uin = {uin} ; out = {uout} ; erro_mat_bal = {erro_mat_bal}")
-
-        DataRecord2(
-            t_cumulative[step],
-            float(dt_vector[step]),
-            Qdoto_vector[step],
-            Qdotw_vector[step],
-            pin_vector[step],
-            pout,
-            Nw_inj[step],
-            S_mean_in_vector[step],
-            S_mean_out_vector[step],
-            S_mean_dx_vector[step],
-            dir1,
-        )
-
         step = step + 1
 
-    DataRecord(
-        t_cumulative,
-        dt_vector,
-        Qdoto_vector,
-        Qdotw_vector,
-        pin_vector,
-        pout,
-        Nw_inj,
-        S_mean_in_vector,
-        S_mean_out_vector,
-        S_mean_dx_vector,
-        dir1,
-    )
+
+_folder_base = [
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/validacaoCocliteHperm2_Mu1e10",
+    # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/five_spot",
+]
+
+
+for i in _folder_base:
+    try:
+        os.mkdir(i)
+    except OSError as error:
+        print(error)
+
+Nx = 10
+Ny = 10
+mu_w = 1
+mu_o = 1
+perm_matriz = 1  # md
+dt = 400
+pin = 2
+pout = 1
+# comentarios
+
+
+start_time = time.time()
+# BrinkmanIMPES(_folder_base[0], mu_w, mu_o, perm_matriz, dt)
+BrinkmanIMPES(Nx, _folder_base[0], mu_w, mu_o, perm_matriz, dt, pin, pout)
+print(time.time() - start_time)
