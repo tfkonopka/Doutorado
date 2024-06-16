@@ -19,7 +19,7 @@ for i in _folder_base:
         print(error)
 
 
-Nx = 50
+Nx = 20
 mu_w = 0.001
 mu_o = 0.001
 perm_matriz = 100  # md

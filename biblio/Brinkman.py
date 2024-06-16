@@ -3,91 +3,111 @@
 
 from fenics import *
 import time
-import ufl
+import ufl_legacy as ufl
 
-
+import csv
 import os
 
 
-def DataRecord(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1):
-    f = open(dir1 + "/results_2" + ".txt", "w")
-    string = (
-        "time"
-        + ","
-        + "dt"
-        + ","
-        + "Qo"
-        + ","
-        + "Qw"
-        + ","
-        + "pin"
-        + ","
-        + "pout"
-        + ","
-        + "Vinj"
-        + ","
-        + "Sin"
-        + ","
-        + "Sout"
-        + ","
-        + "Sdx"
-    )
-    f.write(string)
-    f.write("\n")
-    for i in range(len(t)):
-        string = (
-            str(t[i])
-            + ","
-            + str(float(dt[i]))
-            + ","
-            + str(Qo[i])
-            + ","
-            + str(Qw[i])
-            + ","
-            + str(pin[i])
-            + ","
-            + str(pout)
-            + ","
-            + str(Vinj[i])
-            + ","
-            + str(Sin[i])
-            + ","
-            + str(Sout[i])
-            + ","
-            + str(Sdx[i])
-        )
-        f.write(string)
-        f.write("\n")
-    f.close()
+def compute_step_values(
+    step,
+    t,
+    dt,
+    A_in,
+    Area,
+    u_,
+    S,
+    s0,
+    mu_rel,
+    noo_proj,
+    nww_proj,
+    n,
+    ds,
+    dx,
+    Qinj,
+    dt_vector,
+    t_cumulative,
+    S_mean_in_vector,
+    S_mean_out_vector,
+    S_mean_dx_vector,
+    Q_dot_vector,
+    Nw_inj,
+    Qdotw_vector,
+    Qdoto_vector,
+    pin_vector,
+    vector_step,
+    p_,
+):
+    t_cumulative.append(float(t))
+    dt_vector.append(dt)
+
+    S_mean_in_vector.append(
+        assemble(S * ds(1)) / A_in
+    )  # saturação média na entrada do meio poroso em t
+    S_mean_out_vector.append(
+        assemble(S * ds(3)) / A_in
+    )  # saturação média na saida do meio poroso em t
+    S_mean_dx_vector.append(
+        assemble(S * dx) / Area
+    )  # saturação média do meio poroso em t
+    Q_dot_vector.append(
+        float(-assemble(dot(u_, n) * ds(1)))
+    )  # vetor com a vazão instante por passo de t
+
+    Qinj = Qinj + Q_dot_vector[step] * float(
+        dt
+    )  # vazão acumulada total de injeção final
+    Nw_inj.append(Qinj)
+
+    Qdotw_vector.append(
+        assemble(F(s0, mu_rel, noo_proj, nww_proj) * dot(u_, n) * ds(3))
+    )  # vazão de água na saída do meio poroso
+
+    print(f"Qdotw_vector[step] = {Qdotw_vector[step]}")
+
+    Qdoto_vector.append(
+        Q_dot_vector[step] - Qdotw_vector[step]
+    )  # vazão de óleo na saída do meio poroso
+
+    pin = assemble(p_ * ds(1)) / A_in  # pressão média na entrada
+    pin_vector.append(pin)  # vetor de pressão média na entrada por
+
+    vector_step.append(step)
+
+    uin = assemble(dot(u_, n) * ds(1))
+    uout = assemble(dot(u_, n) * ds(3))
+
+    return Qinj, uin, uout
 
 
 def DataRecord2(t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx, dir1):
-    f = open(dir1 + "/results_" + ".txt", "a")
+    _file_name = "results_2.txt"
+    file_path = os.path.join(dir1, _file_name)
+    write_header = not os.path.exists(file_path)  # Verifica se o arquivo já existe
 
-    string = (
-        str(t)
-        + ","
-        + str(dt)
-        + ","
-        + str(Qo)
-        + ","
-        + str(Qw)
-        + ","
-        + str(pin)
-        + ","
-        + str(pout)
-        + ","
-        + str(Vinj)
-        + ","
-        + str(Sin)
-        + ","
-        + str(Sout)
-        + ","
-        + str(Sdx)
-    )
-    f.write(string)
-    f.write("\n")
-    f.close()
+    # Abre o arquivo no modo de anexar com 'with' para garantir o fechamento
+    with open(file_path, mode="a", newline="") as file:
+        writer = csv.writer(file)
+
+        # Escreve o cabeçalho se necessário
+        if write_header:
+            header = [
+                "time",
+                "dt",
+                "Qo",
+                "Qw",
+                "pin",
+                "pout",
+                "Vinj",
+                "Sin",
+                "Sout",
+                "Sdx",
+            ]
+            writer.writerow(header)
+
+        # Escreve a linha de dados
+        row = [t, dt, Qo, Qw, pin, pout, Vinj, Sin, Sout, Sdx]
+        writer.writerow(row)
 
 
 class PiecewiseConstant(UserExpression):
@@ -108,15 +128,12 @@ def tensor_jump(v, n):
 
 
 def lmbdainv(s, mu_w, mu_o, no, nw):
-    return 1.0 / ((s ** nw) / mu_w + ((1.0 - s) ** no) / mu_o)
+    return 1.0 / ((s**nw) / mu_w + ((1.0 - s) ** no) / mu_o)
 
 
 # Fractional flow function
 def F(s, mu_rel, no, nw):
-    return s ** nw / (s ** nw + mu_rel * (1.0 - s) ** no)
-
-
-
+    return s**nw / (s**nw + mu_rel * (1.0 - s) ** no)
 
 
 def F_vugg(s):
@@ -129,17 +146,17 @@ def mu_brinkman(s, mu_o, mu_w):
 
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.2, 0.430940108))
+        return between(x[0], (0.3, 0.7)) and between(x[1], (0.3, 0.7))
 
 
-class Obstacle1(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.6, 0.830940108))
+# class Obstacle1(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.6, 0.830940108))
 
 
-class Obstacle2(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.6, 0.830940108)) and between(x[0], (0.6, 0.830940108))
+# class Obstacle2(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.6, 0.830940108)) and between(x[0], (0.6, 0.830940108))
 
 
 # class Obstacle3(SubDomain):
@@ -169,7 +186,6 @@ class Obstacle2(SubDomain):
 # class Obstacle3(SubDomain):
 #     def inside(self, x, on_boundary):
 #         return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))
-
 
 
 # class Obstacle4(SubDomain):
@@ -232,12 +248,14 @@ class Obstacle2(SubDomain):
 #         return between(x[1], (0.75, 0.85)) and between(x[0], (0.75, 0.85))
 
 
-def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
-
+def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout, IMPES_SPET):
     Ny = Nx
 
     dir1 = _folder_base + "/dir1"
     dir2 = _folder_base + "/dir2"
+
+    _file_name = "results_2.txt"
+    file_path = f"{dir1}/{_file_name}"
 
     try:
         os.mkdir(dir1)
@@ -306,8 +324,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     nw_inner = 1
 
     obstacle = Obstacle()
-    obstacle1 = Obstacle1()
-    obstacle2 = Obstacle2()
+    # obstacle1 = Obstacle1()
+    # obstacle2 = Obstacle2()
     # obstacle3 = Obstacle3()
     # obstacle4 = Obstacle4()
     # obstacle5 = Obstacle5()
@@ -325,8 +343,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     domains = MeshFunction("size_t", mesh, mesh.topology().dim())
     domains.set_all(marker_outer)
     obstacle.mark(domains, marker_inner)
-    obstacle1.mark(domains, marker_inner)
-    obstacle2.mark(domains, marker_inner)
+    # obstacle1.mark(domains, marker_inner)
+    # obstacle2.mark(domains, marker_inner)
     # obstacle3.mark(domains, marker_inner)
     # obstacle4.mark(domains, marker_inner)
     # obstacle5.mark(domains, marker_inner)
@@ -453,63 +471,67 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     Len = float(assemble(1 * ds(2)))
     Area = float(assemble(1 * dx))
 
-    if os.path.exists(dir1 + "/results_" + ".txt"):
-        os.remove(dir1 + "/results_" + ".txt")
-    else:
-        print("The file does not exist")
+    # if os.path.exists(dir1 + "/results_" + ".txt"):
+    #     os.remove(dir1 + "/results_" + ".txt")
+    # else:
+    #     print("The file does not exist")
 
-    DataRecord2(
-        "time", "dt", "Qo", "Qw", "pin", "pout", "Vinj", "Sin", "Sout", "Sdx", dir1
-    )
+    # DataRecord2(
+    #     "time", "dt", "Qo", "Qw", "pin", "pout", "Vinj", "Sin", "Sout", "Sdx", dir1
+    # )
 
     # while t < T:
-    while step < 1e4:
+    while step < 1e2:
         # ===
-        t += float(dt)
-        solve(a == L, U, bcs)
+        _start_time = time.time()
+
+        if t == 0:
+            solve(a == L, U, bcs)
+            print("t=0")
+
+        if step % IMPES_SPET == 0 and t != 0:
+            solve(a == L, U, bcs)
+            print("t multimpo de .....")
+
+        # solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
+        t += float(dt)
 
-        if step % 50 == 0:
+        if step % 10 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)
 
-        t_cumulative.append(float(t))
-        dt_vector.append(dt)
-
-        S_mean_in_vector.append(
-            assemble(S * ds(1)) / A_in
-        )  # saturação média na entrada do meio poroso em t
-        S_mean_out_vector.append(
-            assemble(S * ds(3)) / A_in
-        )  # saturação média na saida do meio poroso em t
-        S_mean_dx_vector.append(
-            assemble(S * dx) / Area
-        )  # saturação média do meio poroso em t
-        Q_dot_vector.append(
-            float(-assemble(dot(u_, n) * ds(1)))
-        )  # vetor com a vazão instante por passo de t
-
-        Qinj = Qinj + Q_dot_vector[step] * float(
-            dt
-        )  # vazão acumulada total de injeção final
-        Nw_inj.append(Qinj)
-
-        Qdotw_vector.append(
-            assemble(F(s0, mu_rel, noo_proj, nww_proj) * dot(u_, n) * ds(3))
-        )  # vazão de água na saída do meio poroso
-
-        print(f"Qdotw_vector[step] = {Qdotw_vector[step]}")
-
-        Qdoto_vector.append(
-            Q_dot_vector[step] - Qdotw_vector[step]
-        )  # vazão de óleo na saída do meio poroso
-
-        pin = assemble(p_ * ds(1))  # pressão média na entrada
-        pin_vector.append(pin)  # vetor de pressão média na entrada por
-
-        vector_step.append(step)
+        Qinj, uin, uout = compute_step_values(
+            step,
+            t,
+            dt,
+            A_in,
+            Area,
+            u_,
+            S,
+            s0,
+            mu_rel,
+            noo_proj,
+            nww_proj,
+            n,
+            ds,
+            dx,
+            Qinj,
+            dt_vector,
+            t_cumulative,
+            S_mean_in_vector,
+            S_mean_out_vector,
+            S_mean_dx_vector,
+            Q_dot_vector,
+            Nw_inj,
+            Qdotw_vector,
+            Qdoto_vector,
+            pin_vector,
+            vector_step,
+            p_,
+        )
 
         if S_mean_out_vector[step] > 0.3:
             parada = Qdoto_vector[step] / Qdotw_vector[step]
@@ -525,8 +547,6 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         print(f"step = {step}")
         print(f"parada = {parada}")
 
-        uin = assemble(dot(u_, n) * ds(1))
-        uout = assemble(dot(u_, n) * ds(3))
         erro_mat_bal = abs(abs(uin) - abs(uout))
         print(f"uin = {uin} ; out = {uout} ; erro_mat_bal = {erro_mat_bal}")
 
@@ -545,17 +565,13 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         )
 
         step = step + 1
+        _end_time = time.time()
 
-    DataRecord(
-        t_cumulative,
-        dt_vector,
-        Qdoto_vector,
-        Qdotw_vector,
-        pin_vector,
-        pout,
-        Nw_inj,
-        S_mean_in_vector,
-        S_mean_out_vector,
-        S_mean_dx_vector,
-        dir1,
-    )
+        print(f"time of one iteration = {_end_time - _start_time}")
+
+    with open(file_path, mode="a", newline="") as file:
+        writer = csv.writer(file)
+        print("entrou no loop")
+        print(file_path)
+        # Escreve uma flag indicando o fim do processo
+        writer.writerow(["# Fim do processo"])

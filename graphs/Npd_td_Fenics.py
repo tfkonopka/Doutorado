@@ -79,17 +79,29 @@ import numpy as np
 
 
 _str1 = [
-    # "Central_u1.txt",
-    # "Central_u2.txt",
-    # "Central_u3.txt",
-    "fiveSpot.txt",
+    "ImpesModificado_1.txt",
+    #     "ImpesModificado_2.txt",
+    #     "ImpesModificado_4.txt",
+    #     "ImpesModificado_8.txt",
+    #     "ImpesModificado_16.txt",
+    #     "ImpesModificado_32.txt",
+    #     "ImpesModificado_64.txt",
+    #     "ImpesModificado_128.txt",
+    #     "ImpesModificado_256.txt",
+    #     "ImpesModificado_512.txt",
 ]
 
 _str2 = [
-    # "Central_u1",
-    # "Central_u2",
-    # "Central_u3",
-    "fiveSpot",
+    "ImpesModificado_1",
+    #     "ImpesModificado_2",
+    #     "ImpesModificado_4",
+    #     "ImpesModificado_8",
+    #     "ImpesModificado_16",
+    #     "ImpesModificado_32",
+    #     "ImpesModificado_64",
+    #     "ImpesModificado_128",
+    #     "ImpesModificado_256",
+    #     "ImpesModificado_512",
 ]
 
 # _str1 = [
@@ -110,16 +122,33 @@ _str2 = [
 
 # _str2 = ["mesh1", "mesh2", "mesh3", "mesh4"]
 
-_caminho = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Banca/"
+_caminho = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/IMPESModificado/"
 
-color = ["b-", "r", "g", "c", "m", "y", "orange", "purple"]
+color = [
+    "b-",
+    "r",
+    "g",
+    "c",
+    "m",
+    "y",
+    "orange",
+    "purple",
+    "b-",
+    "r",
+    "g",
+    "c",
+    "m",
+    "y",
+    "orange",
+    "purple",
+]
 # color = ["grey", "grey", "grey", "b", "grey", "grey", "orange", "purple"]
 
-# phi = 0.328  # sintetico
+phi = 0.328  # sintetico
 # phi = 1.089  # Arapua10
 # phi = 1.581  # Arapua17
 # phi = 1.396  # Arapua24
-phi = 0.275  # Hallack
+# phi = 0.275  # Hallack
 # phi = 0.00022508324131127364  # Tomog
 
 
@@ -175,6 +204,8 @@ def le_dados(_str1):
     time = []
     Qo = []
     Qw = []
+    Pin = []
+    Pout = []
 
     for i in range(len(data)):
         if i == 0:
@@ -183,8 +214,10 @@ def le_dados(_str1):
         time.append(float(temp[0]))
         Qo.append(float(temp[2]))
         Qw.append(float(temp[3]))
+        Pin.append(float(4))
+        Pout.append(float(5))
 
-    return time, Qo, Qw
+    return time, Qo, Qw, Pin, Pout
 
 
 def td_Npd(time, Qo, Qw):
@@ -220,9 +253,13 @@ def td_Npd(time, Qo, Qw):
 
 for j in range(len(_str1)):
     Bsw1 = []
-    time1, Qo1, Qw1 = le_dados(_caminho + _str1[j])
+    time1, Qo1, Qw1, pin, pout = le_dados(_caminho + _str1[j])
+    delta_P_inicial = np.abs(pin[0] - pout[0])
+    delta_perm_norm = []
     for i in range(len(Qo1)):
         Bsw1.append(Qw1[i] / (Qw1[i] + Qo1[i]))
+        p_hold = np.abs(pin[i] - pout[i]) / delta_P_inicial
+        delta_perm_norm.append(p_hold)
 
     td1, Npdc1 = td_Npd(time1, Qo1, Qw1)
     DataRecord_tD_Bsw(td1, Bsw1, _str2[j], _caminho)
@@ -236,6 +273,9 @@ for j in range(len(_str1)):
 
     plt.figure(3, figsize=(8, 4))
     plt.plot(td1, Qw1, color[j], label=_str2[j], linewidth=1)
+
+    plt.figure(4, figsize=(8, 4))
+    plt.plot(td1, delta_perm_norm, color[j], label=_str2[j], linewidth=1)
 
 
 # plt.title("Arapua17", fontsize=12)

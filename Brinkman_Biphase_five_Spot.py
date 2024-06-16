@@ -355,10 +355,11 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     while step < 1e6:
         # ===
         t_total_inicical_iteracao = time.time()
-        t += float(dt)
+
         solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
+        t += float(dt)
 
         if step % 1 == 0:
             p_file.write(p_, t)

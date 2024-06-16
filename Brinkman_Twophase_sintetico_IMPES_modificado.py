@@ -3,7 +3,7 @@
 
 from fenics import *
 import time
-import ufl
+import ufl_legacy as ufl
 
 
 import os
@@ -108,15 +108,12 @@ def tensor_jump(v, n):
 
 
 def lmbdainv(s, mu_w, mu_o, no, nw):
-    return 1.0 / ((s ** nw) / mu_w + ((1.0 - s) ** no) / mu_o)
+    return 1.0 / ((s**nw) / mu_w + ((1.0 - s) ** no) / mu_o)
 
 
 # Fractional flow function
 def F(s, mu_rel, no, nw):
-    return s ** nw / (s ** nw + mu_rel * (1.0 - s) ** no)
-
-
-
+    return s**nw / (s**nw + mu_rel * (1.0 - s) ** no)
 
 
 def F_vugg(s):
@@ -129,17 +126,17 @@ def mu_brinkman(s, mu_o, mu_w):
 
 class Obstacle(SubDomain):
     def inside(self, x, on_boundary):
-        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.2, 0.430940108))
+        return between(x[0], (0.3, 0.7)) and between(x[1], (0.3, 0.7))
 
 
-class Obstacle1(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.6, 0.830940108))
+# class Obstacle1(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.2, 0.430940108)) and between(x[0], (0.6, 0.830940108))
 
 
-class Obstacle2(SubDomain):
-    def inside(self, x, on_boundary):
-        return between(x[1], (0.6, 0.830940108)) and between(x[0], (0.6, 0.830940108))
+# class Obstacle2(SubDomain):
+#     def inside(self, x, on_boundary):
+#         return between(x[1], (0.6, 0.830940108)) and between(x[0], (0.6, 0.830940108))
 
 
 # class Obstacle3(SubDomain):
@@ -169,7 +166,6 @@ class Obstacle2(SubDomain):
 # class Obstacle3(SubDomain):
 #     def inside(self, x, on_boundary):
 #         return between(x[1], (0.15, 0.25)) and between(x[0], (0.75, 0.85))
-
 
 
 # class Obstacle4(SubDomain):
@@ -232,8 +228,7 @@ class Obstacle2(SubDomain):
 #         return between(x[1], (0.75, 0.85)) and between(x[0], (0.75, 0.85))
 
 
-def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
-
+def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout, IMPES_SPET):
     Ny = Nx
 
     dir1 = _folder_base + "/dir1"
@@ -306,8 +301,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     nw_inner = 1
 
     obstacle = Obstacle()
-    obstacle1 = Obstacle1()
-    obstacle2 = Obstacle2()
+    # obstacle1 = Obstacle1()
+    # obstacle2 = Obstacle2()
     # obstacle3 = Obstacle3()
     # obstacle4 = Obstacle4()
     # obstacle5 = Obstacle5()
@@ -325,8 +320,8 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     domains = MeshFunction("size_t", mesh, mesh.topology().dim())
     domains.set_all(marker_outer)
     obstacle.mark(domains, marker_inner)
-    obstacle1.mark(domains, marker_inner)
-    obstacle2.mark(domains, marker_inner)
+    # obstacle1.mark(domains, marker_inner)
+    # obstacle2.mark(domains, marker_inner)
     # obstacle3.mark(domains, marker_inner)
     # obstacle4.mark(domains, marker_inner)
     # obstacle5.mark(domains, marker_inner)
@@ -463,12 +458,22 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
     )
 
     # while t < T:
-    while step < 1e4:
+    while step < 1e2:
         # ===
-        t += float(dt)
-        solve(a == L, U, bcs)
+        _start_time = time.time()
+
+        if t == 0:
+            solve(a == L, U, bcs)
+            print("t=0")
+
+        if step % IMPES_SPET == 0 and t != 0:
+            solve(a == L, U, bcs)
+            print("t multimpo de .....")
+
+        # solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
+        t += float(dt)
 
         if step % 50 == 0:
             p_file.write(p_, t)
@@ -506,7 +511,7 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
             Q_dot_vector[step] - Qdotw_vector[step]
         )  # vazão de óleo na saída do meio poroso
 
-        pin = assemble(p_ * ds(1))  # pressão média na entrada
+        pin = assemble(p_ * ds(1)) / A_in  # pressão média na entrada
         pin_vector.append(pin)  # vetor de pressão média na entrada por
 
         vector_step.append(step)
@@ -545,6 +550,9 @@ def BrinkmanIMPES(Nx, _folder_base, mu_w, mu_o, perm_darcy, dt, pin, pout):
         )
 
         step = step + 1
+        _end_time = time.time()
+
+        print(f"time of one iteration = {_end_time - _start_time}")
 
     DataRecord(
         t_cumulative,
