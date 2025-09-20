@@ -79,10 +79,12 @@ import numpy as np
 
 
 _str1 = [
-    "ImpesModificado_1.txt",
-    #     "ImpesModificado_2.txt",
-    #     "ImpesModificado_4.txt",
-    #     "ImpesModificado_8.txt",
+    "permVug1m2.txt",
+    # "vugg_4_perm_100md_mesh100.txt",
+    # "vugg_16_perm_100md_mesh100.txt",
+    # "vugg_canal_perm_100md_mesh100.txt",
+    # "DR.txt",
+    # "CanalVertical.txt",
     #     "ImpesModificado_16.txt",
     #     "ImpesModificado_32.txt",
     #     "ImpesModificado_64.txt",
@@ -92,17 +94,33 @@ _str1 = [
 ]
 
 _str2 = [
-    "ImpesModificado_1",
-    #     "ImpesModificado_2",
-    #     "ImpesModificado_4",
-    #     "ImpesModificado_8",
-    #     "ImpesModificado_16",
+    "permVug1m2_bsw",
+    # "vugg_4_perm_100md_mesh100_bsw",
+    # "vugg_16_perm_100md_mesh100_bsw",
+    # "vugg_canal_perm_100md_mesh100_bsw",
+    # "DR_Bsw",
+    # "CanalVertical_Bsw",
     #     "ImpesModificado_32",
     #     "ImpesModificado_64",
     #     "ImpesModificado_128",
     #     "ImpesModificado_256",
     #     "ImpesModificado_512",
 ]
+
+_str3 = [
+    "permVug1m2_NpD",
+    # "vugg_4_perm_100md_mesh100_NpD",
+    # "vugg_16_perm_100md_mesh100_NpD",
+    # "vugg_canal_perm_100md_mesh100_NpD",
+    # "DR_NpD",
+    # "CanalVertical_NpD",
+    #     "ImpesModificado_32",
+    #     "ImpesModificado_64",
+    #     "ImpesModificado_128",
+    #     "ImpesModificado_256",
+    #     "ImpesModificado_512",
+]
+
 
 # _str1 = [
 #     "mesh_20.txt",
@@ -122,7 +140,7 @@ _str2 = [
 
 # _str2 = ["mesh1", "mesh2", "mesh3", "mesh4"]
 
-_caminho = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/IMPESModificado/"
+_caminho = "/home/tfk/Downloads/vug/"
 
 color = [
     "b-",
@@ -170,7 +188,7 @@ def DataRecord_tD_Npd(td, Npd, _filename, _path):
     f.write(string)
     f.write("\n")
     for i in range(len(td)):
-        if i % 40 == 0:
+        if i % 1 == 0:
             string = str(td[i]) + "    " + str(float(Npd[i]))
             f.write(string)
             f.write("\n")
@@ -263,6 +281,7 @@ for j in range(len(_str1)):
 
     td1, Npdc1 = td_Npd(time1, Qo1, Qw1)
     DataRecord_tD_Bsw(td1, Bsw1, _str2[j], _caminho)
+    DataRecord_tD_Npd(td1, Bsw1, _str3[j], _caminho)
     # DataRecord_tD_Npd(td1, Npdc1, _str2[j], _caminho)
 
     plt.figure(1, figsize=(8, 4))

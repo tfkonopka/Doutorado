@@ -1,6 +1,8 @@
 from fenics import *
 import time
-import ufl
+
+# import ufl
+import ufl_legacy as ufl
 
 
 def tensor_jump(v, n):
@@ -39,9 +41,9 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
 
     # bc1 = DirichletBC(W.sub(0), Constant((1.0e-6, 0.0)), boundaries, 1)
     # bc1 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 1)  # face Oeste
-    bc2 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 2)  # face Norte
+    bc2 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 1)  # face Norte
     # bc3 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 3)  # face leste2.2.6
-    bc4 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 4)  # face sul
+    bc4 = DirichletBC(W.sub(0), Constant((0.0, 0.0)), boundaries, 3)  # face sul
 
     bcs = [bc2, bc4]  # velocity BC
 
@@ -92,8 +94,8 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     L = (
         inner(f, v) * dx(0)
         + inner(f, v) * dx(1)
-        - pin * dot(v, n) * ds(1)
-        - pout * dot(v, n) * ds(3)
+        - pin * dot(v, n) * ds(2)
+        - pout * dot(v, n) * ds(4)
     )
 
     U = Function(W)
@@ -107,12 +109,12 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
     p_file = File(dir2 + "/p.pvd")
     p_file << p1
 
-    area = assemble(Constant(1.0) * ds(1))
-    Q = assemble(dot(u1, n) * ds(1))
+    area = assemble(Constant(1.0) * ds(2))
+    Q = assemble(dot(u1, n) * ds(2))
     print(f"Q = {float(Q)}")
-    pin_calc = assemble(p1 * ds(1)) / area
-    pout_calc = assemble(p1 * ds(3)) / area
-    _len = assemble(Constant(1.0) * ds(2))
+    pin_calc = assemble(p1 * ds(2)) / area
+    pout_calc = assemble(p1 * ds(4)) / area
+    _len = assemble(Constant(1.0) * ds(1))
 
     dp = float(pin_calc - pout_calc) / float(_len)
     deltap = float(pin - pout)

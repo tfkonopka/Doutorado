@@ -1,17 +1,20 @@
 # from Brinkman_Twophase_sintetico_deltaP import *
 
-from brinkman_biphase_IMPES_gsmh import *
+# from brinkman_biphase_IMPES_gsmh import *
 
 # from Brinkman_Twophase_sintetico_validacao2 import *
 
 # from Brinkman_mono_sintetico import *
 # from brinkman_mono_arapua import *
 
+from Brinkman_Twophase_sintetico_IMPES_modificado_fulldomain import *
+
+
 import os
 import time
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/testeKvug_semPermvug",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/ImpesModificado_256",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/ImpesModificado_128",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/ImpesModificado_64",
@@ -26,31 +29,32 @@ for i in _folder_base:
     except OSError as error:
         print(error)
 
-Nx = 10
-Ny = 10
+Nx = 50
+Ny = 50
 mu_w = 1
 mu_o = 1
 perm_matriz = 100  # md
-dt = 1
+perm_vug = 9.86923e16
+dt = 200
 pin = 2
 pout = 1
 IMPES_Steps = [512, 256, 128, 64, 32]
-# comentarios
+# # comentarios
 
 
-def DataRecord(t, dt, dir1):
-    f = open(dir1 + "/results_times" + ".txt", "w")
-    string = "step" + "," + "time (s)" + ","
-    f.write(string)
-    f.write("\n")
-    for i in range(len(t)):
-        string = str(t[i]) + "," + str(float(dt[i])) + ","
-        f.write(string)
-        f.write("\n")
-    f.close()
+# def DataRecord(t, dt, dir1):
+#     f = open(dir1 + "/results_times" + ".txt", "w")
+#     string = "step" + "," + "time (s)" + ","
+#     f.write(string)
+#     f.write("\n")
+#     for i in range(len(t)):
+#         string = str(t[i]) + "," + str(float(dt[i])) + ","
+#         f.write(string)
+#         f.write("\n")
+#     f.close()
 
 
-time_each_step = []
+# time_each_step = []
 
 
 # for i in range(len(IMPES_Steps)):
@@ -68,8 +72,19 @@ time_each_step = []
 # DataRecord(IMPES_Steps, time_each_step, _folder_base[0])
 
 
-BrinkmanIMPESGsmh(_folder_base[0], mu_w, mu_o, perm_matriz, dt)
+# BrinkmanIMPESGsmh(_folder_base[0], mu_w, mu_o, perm_matriz, dt)
 
 # BrinkmanMonoBDM(perm_matriz, pin, pout, mu_w, Nx, Ny, _folder_base[0])
 # BrinkmanIMPESGsmh(_folder_base[0], mu_w, mu_o, perm_matriz, dt)
-# BrinkmanIMPES(Nx, _folder_base[0], mu_w, mu_o, perm_matriz, dt, pin, pout)
+BrinkmanIMPES(
+    Nx,
+    _folder_base[0],
+    mu_w,
+    mu_o,
+    perm_matriz,
+    perm_vug,
+    dt,
+    pin,
+    pout,
+    IMPES_Steps[4],
+)
