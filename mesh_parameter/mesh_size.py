@@ -1,7 +1,7 @@
 from fenics import *
 
 
-_folder_base = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/RD/DR_am_8_1mD"
+_folder_base = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/DR_am_8"
 
 
 def mesh_size(caminho):
