@@ -3,7 +3,7 @@
 
 from fenics import *
 import time
-import ufl_legacy as ufl
+import ufl_legacy as ufl 
 
 
 import os
