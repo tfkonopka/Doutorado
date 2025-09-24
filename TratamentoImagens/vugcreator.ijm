@@ -71,7 +71,7 @@ if (save_image || save_stats_file) {
         output_dir = getDirectory("Escolha a pasta para salvar os arquivos");
         print("Pasta selecionada via diálogo: " + output_dir);
     }
-    
+
     if (output_dir == "") {
         print("AVISO: Nenhuma pasta selecionada - arquivos não serão salvos");
         save_image = false;
@@ -89,9 +89,9 @@ print("=== INICIANDO GERAÇÃO DE " + num_images + " IMAGEM(NS) ===");
 
 // Loop principal para gerar múltiplas imagens
 for (img_count = 1; img_count <= num_images; img_count++) {
-    
+
     print("\n=== GERANDO IMAGEM " + img_count + " DE " + num_images + " ===");
-    
+
     // Conversão para pixels
     L_pixels = L * pixels_per_mm;
     W_pixels = W * pixels_per_mm;
@@ -136,13 +136,13 @@ for (img_count = 1; img_count <= num_images; img_count++) {
     setLineWidth(1);
 
     // Borda superior
-    drawLine(0, 0, L_pixels-1, 0);
+    //drawLine(0, 0, L_pixels-1, 0);
     // Borda inferior  
-    drawLine(0, W_pixels-1, L_pixels-1, W_pixels-1);
+    //drawLine(0, W_pixels-1, L_pixels-1, W_pixels-1);
     // Borda esquerda
-    drawLine(0, 0, 0, W_pixels-1);
+    //drawLine(0, 0, 0, W_pixels-1);
     // Borda direita
-    drawLine(L_pixels-1, 0, L_pixels-1, W_pixels-1);
+    //drawLine(L_pixels-1, 0, L_pixels-1, W_pixels-1);
 
     // Criar grade de pontos candidatos
     grid_points_x = newArray();
@@ -198,7 +198,7 @@ for (img_count = 1; img_count <= num_images; img_count++) {
         do {
             random_index = floor(random() * point_count);
         } while (used_indices[random_index]);
-        
+
         selected_indices[i] = random_index;
         used_indices[random_index] = true;
     }
@@ -209,7 +209,7 @@ for (img_count = 1; img_count <= num_images; img_count++) {
         index = selected_indices[i];
         x_center = grid_points_x[index];
         y_center = grid_points_y[index];
-        
+
         // Criar seleção circular
         makeOval(x_center - R_pixels, y_center - R_pixels, 2 * R_pixels, 2 * R_pixels);
         fill();
@@ -236,27 +236,49 @@ for (img_count = 1; img_count <= num_images; img_count++) {
     stats_content += "Distância entre nós: " + D + " mm (" + D_pixels + " pixels)\n";
     stats_content += "Total de pontos na grade: " + point_count + "\n\n";
 
-    // Calcular macroporosidade se solicitado
+    // ===== SEÇÃO CORRIGIDA - CÁLCULO DA MACROPOROSIDADE =====
     if (calc_porosity) {
-        selectImage(image_id); // Garantir que a imagem dos vugs está selecionada
-        run("Histogram");
-        getHistogram(values, counts, 256);
-        black_pixels = counts[0]; // Pixels pretos (vugs)
-        total_pixels = L_pixels * W_pixels;
-        macroporosity = black_pixels / total_pixels;
+        selectImage(image_id);
         
-        // Fechar janela do histograma
-        if (isOpen("Histogram")) {
-            selectWindow("Histogram");
-            close();
+        // Contar apenas pixels pretos dos vugs, excluindo as bordas
+        vug_pixels = 0;
+        border_pixels = 0;
+        
+        // Função para verificar se um pixel está na borda
+        function isOnBorder(x, y, width, height) {
+            return (x == 0 || x == width-1 || y == 0 || y == height-1);
         }
         
+        // Percorrer todos os pixels
+        for (x = 0; x < L_pixels; x++) {
+            for (y = 0; y < W_pixels; y++) {
+                pixel_value = getPixel(x, y);
+                if (pixel_value == 0) { // Pixel preto
+                    if (isOnBorder(x, y, L_pixels, W_pixels)) {
+                        border_pixels++; // Pixel da borda
+                    } else {
+                        vug_pixels++; // Pixel de vug
+                    }
+                }
+            }
+        }
+        
+        // Área total incluindo bordas
+        total_pixels = L_pixels * W_pixels;
+        
+        // Macroporosidade = pixels dos vugs / área total
+        macroporosity = vug_pixels / total_pixels;
+        
         stats_content += "=== ESTATÍSTICAS REAIS ===\n";
-        stats_content += "Pixels pretos (vugs): " + black_pixels + "\n";
-        stats_content += "Total de pixels: " + total_pixels + "\n";
+        stats_content += "Pixels pretos (vugs): " + vug_pixels + "\n";
+        stats_content += "Pixels pretos (bordas): " + border_pixels + "\n";
+        stats_content += "Total de pixels pretos: " + (vug_pixels + border_pixels) + "\n";
+        stats_content += "Área total: " + total_pixels + " pixels\n";
         stats_content += "Macroporosidade: " + d2s(macroporosity, 4) + "\n";
         stats_content += "Macroporosidade (%): " + d2s(macroporosity * 100, 2) + "%\n\n";
-        
+
+        print("Pixels de vugs: " + vug_pixels);
+        print("Pixels de bordas: " + border_pixels);
         print("Macroporosidade: " + d2s(macroporosity * 100, 2) + "%");
     }
 
@@ -265,12 +287,12 @@ for (img_count = 1; img_count <= num_images; img_count++) {
         theoretical_vug_area = PI * R * R * n_inclusions;
         domain_area = L * W;
         theoretical_porosity = theoretical_vug_area / domain_area;
-        
+
         stats_content += "=== PARÂMETROS TEÓRICOS ===\n";
         stats_content += "Área teórica dos vugs: " + d2s(theoretical_vug_area, 2) + " mm²\n";
         stats_content += "Área do domínio: " + domain_area + " mm²\n";
         stats_content += "Porosidade teórica: " + d2s(theoretical_porosity * 100, 2) + "%\n\n";
-        
+
         if (calc_porosity) {
             overlap_factor = theoretical_porosity - macroporosity;
             stats_content += "=== ANÁLISE DE SOBREPOSIÇÃO ===\n";
@@ -310,13 +332,13 @@ for (img_count = 1; img_count <= num_images; img_count++) {
     if (save_image && output_dir != "") {
         // Garantir que a imagem dos vugs está selecionada
         selectImage(image_id);
-        
+
         image_filename = base_filename + ".tif";
         full_path = output_dir + image_filename;
-        
+
         // Tentar salvar
         saveAs("Tiff", full_path);
-        
+
         // Verificar se foi salvo
         if (File.exists(full_path)) {
             print("✓ Imagem " + img_count + " salva: " + image_filename);
@@ -328,10 +350,10 @@ for (img_count = 1; img_count <= num_images; img_count++) {
     if (save_stats_file && output_dir != "") {
         stats_filename = base_filename + "_stats.txt";
         full_path_stats = output_dir + stats_filename;
-        
+
         // Tentar salvar
         File.saveString(stats_content, full_path_stats);
-        
+
         // Verificar se foi salvo
         if (File.exists(full_path_stats)) {
             print("✓ Estatísticas " + img_count + " salvas: " + stats_filename);
@@ -352,7 +374,7 @@ function generateMultipleConfigurations() {
     radii = newArray(1.91, 2.91);
     n_vugs = newArray(225, 525);
     distances = newArray("R", "1.5R", "2R", "2R+0.5", "3R");
-    
+
     config_count = 0;
     for (r = 0; r < radii.length; r++) {
         for (n = 0; n < n_vugs.length; n++) {
