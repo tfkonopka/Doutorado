@@ -1,6 +1,6 @@
 from fenics import *
 import time
-import ufl
+import ufl_legacy as ufl
 import os
 
 
@@ -119,7 +119,7 @@ def mu_brinkman(s, mu_o, mu_w):
     return s * mu_w + (1.0 - s) * mu_o
 
 
-def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
+def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt, IMPES_SPET):
     dir1 = _folder_base + "/dir1"
     dir2 = _folder_base + "/dir2"
 
@@ -313,12 +313,23 @@ def BrinkmanIMPESGsmh(_folder_base, mu_w, mu_o, perm_darcy, dt):
     while step < 1e6:
         # ===
         _start_time = time.time()
-        t += float(dt)
-        solve(a == L, U, bcs)
+
+        _start_time = time.time()
+
+        if t == 0:
+            solve(a == L, U, bcs)
+            print("t=0")
+
+        if step % IMPES_SPET == 0 and t != 0:
+            solve(a == L, U, bcs)
+            print("t multimpo de .....")
+
+        # solve(a == L, U, bcs)
         solve(a_s == L_f, S)
         s0.assign(S)
+        t += float(dt)
 
-        if step % 100 == 0:
+        if step % 50 == 0:
             p_file.write(p_, t)
             s_file.write(S, t)
             u_file.write(u_, t)

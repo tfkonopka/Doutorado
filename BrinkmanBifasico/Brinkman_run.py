@@ -1,25 +1,26 @@
 # from Brinkman_Twophase_sintetico_deltaP import *
 
-# from brinkman_biphase_IMPES_gsmh import *
+from brinkman_biphase_IMPES_gsmh import *
 
 # from Brinkman_Twophase_sintetico_validacao2 import *
 
 # from Brinkman_mono_sintetico import *
 # from brinkman_mono_arapua import *
 
-from Brinkman_Twophase_sintetico_IMPES_modificado_fulldomain import *
+# from Brinkman_Twophase_sintetico_IMPES_modificado_fulldomain import *
 
 
 import os
 import time
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/testeKvug_semPermvug",
+    # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/testeKvug_semPermvug",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/ImpesModificado_256",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/ImpesModificado_128",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/ImpesModificado_64",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/ImpesModificado_32",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/five_spot",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24"
 ]
 
 
@@ -72,19 +73,19 @@ IMPES_Steps = [512, 256, 128, 64, 32]
 # DataRecord(IMPES_Steps, time_each_step, _folder_base[0])
 
 
-# BrinkmanIMPESGsmh(_folder_base[0], mu_w, mu_o, perm_matriz, dt)
+BrinkmanIMPESGsmh(_folder_base[0], mu_w, mu_o, perm_matriz, dt, IMPES_Steps[1])
 
 # BrinkmanMonoBDM(perm_matriz, pin, pout, mu_w, Nx, Ny, _folder_base[0])
 # BrinkmanIMPESGsmh(_folder_base[0], mu_w, mu_o, perm_matriz, dt)
-BrinkmanIMPES(
-    Nx,
-    _folder_base[0],
-    mu_w,
-    mu_o,
-    perm_matriz,
-    perm_vug,
-    dt,
-    pin,
-    pout,
-    IMPES_Steps[4],
-)
+# BrinkmanIMPES(
+#     Nx,
+#     _folder_base[0],
+#     mu_w,
+#     mu_o,
+#     perm_matriz,
+#     perm_vug,
+#     dt,
+#     pin,
+#     pout,
+#     IMPES_Steps[2],
+# )
