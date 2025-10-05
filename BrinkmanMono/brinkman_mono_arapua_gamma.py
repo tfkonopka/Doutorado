@@ -174,7 +174,7 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho, alpha):
 
 
 _folder_base = [
-    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/mono_gamma_arapua17",
+    "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/mono_gamma_arapua17_V2",
     # "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/five_spot",
 ]
 

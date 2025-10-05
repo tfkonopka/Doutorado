@@ -177,6 +177,6 @@ def BrinkmanMonoBDM(k_matriz, pin, pout, mu, Nx, Ny, caminho):
 # (k_matriz, pin, pout, mu, Nx, Ny, caminho)
 
 
-# _folder_base = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/vugg_sintetico/vugg_sens/Araupa"
 
-# BrinkmanMonoBDM(1e-6, 10, 1, 1, 1, 1, _folder_base)
+_folder_base = "/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24"
+BrinkmanMonoBDM(1e-6, 10, 1, 1, 1, 1, _folder_base)

@@ -16,8 +16,8 @@ def matlab_to_python_mesh_converter():
     plt.close('all')
     
     # Definir caminhos dos arquivos
-    image_input = r'/home/tfk/Desktop/Teste_ImageJ/Imagens/vug_config_R1.91mm_N225_D3.82mm_17583E12.tif'
-    geo_output = r'/home/tfk/Desktop/Teste_ImageJ/ImagensConvertidas/vug_config_R1.91mm_N225_D3.82mm_17583E12_v1_adaptive.geo'
+    image_input = r'/home/tfk/Desktop/Teste_ImageJ/Imagens/vug_config_R1.91mm_N225_D3.82mm_AFA48F.tif'
+    geo_output = r'/home/tfk/Desktop/Teste_ImageJ/ImagensConvertidas/vug_config_R1.91mm_N225_D3.82mm_AFA48F.geo'
     
     # Ler e processar a imagem
     print("Processando imagem...")

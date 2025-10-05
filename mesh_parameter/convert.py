@@ -2,8 +2,8 @@ import os
 from dolfin import *
 import meshio
 
-file_in = "/home/tfk/Desktop/Teste_ImageJ/ImagensConvertidas/vug_config_R1.91mm_N225_D3.82mm_17583E12_v1_adaptive"
-file_out = "/home/tfk/Desktop/Teste_ImageJ/ImagensConvertidas/teste_adaptativo/vug_config_R1.91mm_N225_D3.82mm_17583E12_v1_adaptive"
+file_in = "/home/tfk/Desktop/Teste_ImageJ/ImagensConvertidas/vug_config_R1.91mm_N225_D3.82mm_AFA48F"
+file_out = "/home/tfk/Desktop/Teste_ImageJ/ImagensConvertidas/teste_1/vug_config_R1.91mm_N225_D3.82mm_AFA48F_v2"
 
 # Criar diretório de saída se não existir
 os.makedirs(os.path.dirname(file_out), exist_ok=True)
