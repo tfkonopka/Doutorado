@@ -592,7 +592,7 @@ if __name__ == "__main__":
         mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
         output_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results",
         mu_w=1e-3,              # Viscosidade água [Pa.s]
-        mu_o=10e-3,             # Viscosidade óleo [Pa.s]
+        mu_o=1e-3,             # Viscosidade óleo [Pa.s]
         perm_darcy=100,         # Permeabilidade [Darcy]
         dt=200,                 # Passo de tempo [s]
         phi=0.2,                # Porosidade
@@ -603,7 +603,7 @@ if __name__ == "__main__":
     
     # Executar simulação
     solver.run(
-        T=500.0,           # Tempo final [s]
+        T=1000000.0,           # Tempo final [s]
         impes_steps=256,     # Atualiza pressão a cada 5 passos
         save_interval=10,  # Salva campos a cada 10 passos
         max_steps=int(1e6) # Máximo de passos
