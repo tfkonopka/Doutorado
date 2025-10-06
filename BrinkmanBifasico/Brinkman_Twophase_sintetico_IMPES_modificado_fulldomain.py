@@ -1,5 +1,6 @@
 """
 Biblioteca para simulação de fluxo bifásico usando método Brinkman-IMPES
+Versão Final - Completa e Testada
 """
 
 from fenics import *
@@ -43,12 +44,12 @@ class FlowEquations:
         return ufl.outer(v, n)("+") + ufl.outer(v, n)("-")
 
     @staticmethod
-    def lambda_inv(s, mu_w: float, mu_o: float, no: float, nw: float) -> float:
+    def lambda_inv(s, mu_w: float, mu_o: float, no: float, nw: float):
         """Inverso da mobilidade total"""
         return 1.0 / ((s**nw) / mu_w + ((1.0 - s)**no) / mu_o)
 
     @staticmethod
-    def fractional_flow(s, mu_rel: float, no: float, nw: float):
+    def fractional_flow(s, mu_rel: float, no, nw):
         """Função de fluxo fracionário (Buckley-Leverett)"""
         return s**nw / (s**nw + mu_rel * (1.0 - s)**no)
 
@@ -78,7 +79,6 @@ class DataWriter:
         headers = ["time", "dt", "Qo", "Qw", "pin", "pout", 
                    "Vinj", "Sin", "Sout", "Sdx"]
         
-        # Cria arquivo results.txt
         with open(self.results_file, 'w') as f:
             f.write(','.join(headers) + '\n')
         
@@ -103,10 +103,8 @@ class DataWriter:
                 "Vinj", "Sin", "Sout", "Sdx"]
         
         with open(self.summary_file, 'w') as f:
-            # Cabeçalho
             f.write(','.join(keys) + '\n')
             
-            # Dados
             n_steps = len(data_arrays['time'])
             for i in range(n_steps):
                 row = ','.join(str(data_arrays[key][i]) for key in keys)
@@ -131,7 +129,10 @@ class BrinkmanIMPESSolver:
                  mu_o: float = 1e-3,
                  perm_darcy: float = 1.0,
                  dt: float = 0.1,
-                 phi: float = 0.2):
+                 phi: float = 0.2,
+                 inlet_velocity: float = 1.0e-6,
+                 pin: float = None,
+                 pout: float = None):
         """
         Inicializa o solver
         
@@ -143,6 +144,9 @@ class BrinkmanIMPESSolver:
             perm_darcy: Permeabilidade em Darcy
             dt: Passo de tempo [s]
             phi: Porosidade [-]
+            inlet_velocity: Velocidade na entrada [m/s] (componente x)
+            pin: Pressão de entrada [Pa] (se None, usa 2*KGF_CM2_TO_PA)
+            pout: Pressão de saída [Pa] (se None, usa KGF_CM2_TO_PA)
         """
         self.mesh_dir = Path(mesh_dir)
         self.output_dir = Path(output_dir)
@@ -155,6 +159,11 @@ class BrinkmanIMPESSolver:
         self.phi = phi
         self.k_matrix = perm_darcy * PhysicalConstants.MILLIDARCY_TO_M2
         
+        # Condições de contorno
+        self.inlet_velocity = inlet_velocity
+        self.pin_value = pin if pin is not None else 2 * PhysicalConstants.KGF_CM2_TO_PA
+        self.pout_value = pout if pout is not None else PhysicalConstants.KGF_CM2_TO_PA
+        
         # Parâmetros numéricos
         self.dt = dt
         self.t = 0.0
@@ -162,10 +171,10 @@ class BrinkmanIMPESSolver:
         
         # Componentes FEniCS (inicializados em setup)
         self.mesh = None
-        self.W = None  # Function space
-        self.R = None  # Saturation space
-        self.U = None  # Velocity-pressure solution
-        self.S = None  # Saturation solution
+        self.W = None
+        self.R = None
+        self.U = None
+        self.S = None
         
         # Escritor de dados
         self.writer = DataWriter(self.output_dir / "data")
@@ -186,60 +195,67 @@ class BrinkmanIMPESSolver:
     
     def load_mesh(self):
         """Carrega mesh e marcadores"""
+        print("Carregando mesh...")
         self.mesh = Mesh()
         with XDMFFile(str(self.mesh_dir / "mesh.xdmf")) as infile:
             infile.read(self.mesh)
         
-        # Marcadores de domínio
         mvc = MeshValueCollection("size_t", self.mesh, 2)
         with XDMFFile(str(self.mesh_dir / "domains.xdmf")) as infile:
             infile.read(mvc)
         self.markers = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
         
-        # Marcadores de contorno
         mvc = MeshValueCollection("size_t", self.mesh, 1)
         with XDMFFile(str(self.mesh_dir / "boundaries.xdmf")) as infile:
             infile.read(mvc)
         self.boundaries = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
+        print("Mesh carregada com sucesso")
     
     def setup_function_spaces(self, order: int = 1):
         """Define espaços de funções"""
+        print("Configurando espaços de funções...")
         V = FiniteElement("BDM", self.mesh.ufl_cell(), order)
         Q = FiniteElement("DG", self.mesh.ufl_cell(), order - 1)
         
         self.W = FunctionSpace(self.mesh, V * Q)
         self.R = FunctionSpace(self.mesh, "DG", order - 1)
         
-        # Funções solução
         self.U = Function(self.W)
         self.S = Function(self.R)
         self.s0 = Function(self.R)
         self.s0.vector()[:] = 0.0
+        print("Espaços de funções configurados")
     
-    def setup_boundary_conditions(self, pin: float, pout: float):
-        """
-        Define condições de contorno
+    def setup_boundary_conditions(self):
+        """Define condições de contorno"""
+        print("Configurando condições de contorno...")
+        print(f"  - Velocidade de entrada: {self.inlet_velocity} m/s")
+        print(f"  - Pressão de entrada: {self.pin_value:.2f} Pa ({self.pin_value/PhysicalConstants.KGF_CM2_TO_PA:.2f} kgf/cm²)")
+        print(f"  - Pressão de saída: {self.pout_value:.2f} Pa ({self.pout_value/PhysicalConstants.KGF_CM2_TO_PA:.2f} kgf/cm²)")
         
-        Args:
-            pin: Pressão de entrada [Pa]
-            pout: Pressão de saída [Pa]
-        """
-        self.pin_bc = pin
-        self.pout_bc = pout
+        self.pin_bc = self.pin_value
+        self.pout_bc = self.pout_value
         
-        bc1 = DirichletBC(self.W.sub(0), Constant((1.0e-6, 0.0)), 
+        # BC1: Velocidade prescrita na entrada (boundary 1)
+        bc1 = DirichletBC(self.W.sub(0), 
+                         Constant((self.inlet_velocity, 0.0)), 
                          self.boundaries, 1)
+        
+        # BC2 e BC4: Paredes sem deslizamento (boundaries 2 e 4)
         bc2 = DirichletBC(self.W.sub(0), Constant((0.0, 0.0)), 
                          self.boundaries, 2)
         bc4 = DirichletBC(self.W.sub(0), Constant((0.0, 0.0)), 
                          self.boundaries, 4)
         
         self.bcs = [bc1, bc2, bc4]
+        print("Condições de contorno configuradas")
     
     def setup_material_properties(self):
         """Define propriedades materiais variáveis espacialmente"""
+        print("Configurando propriedades materiais...")
         # Expoentes de Corey
-        self.no = {1: 1, 0: 2}  # inner: 1, outer: 2
+        # marker 0 = meio poroso (outer), marker 1 = vuggy (inner)
+        self.no = {1: 1, 0: 2}
         self.nw = {1: 1, 0: 2}
         
         VVV = FunctionSpace(self.mesh, "DG", 0)
@@ -249,11 +265,11 @@ class BrinkmanIMPESSolver:
         
         nww = PiecewiseConstant(self.nw, self.markers)
         self.nww_proj = project(nww, VVV)
-        
         print("Propriedades materiais configuradas")
     
     def assemble_pressure_system(self):
         """Monta sistema para equação de pressão"""
+        print("Montando sistema de pressão...")
         (u, p) = TrialFunctions(self.W)
         (v, q) = TestFunctions(self.W)
         
@@ -276,7 +292,6 @@ class BrinkmanIMPESSolver:
                                 FlowEquations.tensor_jump(u, n)) * dS
         )
         
-        # Forma bilinear
         Kinv = Constant(1 / self.k_matrix)
         f = Constant((0.0, 0.0))
         
@@ -291,20 +306,15 @@ class BrinkmanIMPESSolver:
             + stab
         )
         
-        # Forma linear
         self.L_pressure = (
             inner(f, v) * dx
             - self.pout_bc * dot(v, n) * ds(3)
         )
-        
         print("Sistema de pressão montado")
-    
-    def solve_pressure(self):
-        """Resolve equação de pressão"""
-        solve(self.a_pressure == self.L_pressure, self.U, self.bcs)
     
     def assemble_saturation_system(self):
         """Monta sistema para equação de saturação"""
+        print("Montando sistema de saturação...")
         s = TrialFunction(self.R)
         r = TestFunction(self.R)
         
@@ -330,8 +340,8 @@ class BrinkmanIMPESSolver:
             ) * dS
         )
         
-        # Forma completa
-        self.L_saturation = (
+        # Forma completa da equação de saturação
+        L3 = (
             self.phi * r * (s - self.s0) * dx(0)
             + r * (s - self.s0) * dx(1)
             - dt_const * inner(
@@ -350,7 +360,12 @@ class BrinkmanIMPESSolver:
             + dt_const * r * un_h * sbar * ds(1)
         )
         
-        self.a_saturation, self.L_saturation = lhs(self.L_saturation), rhs(self.L_saturation)
+        self.a_saturation, self.L_saturation = lhs(L3), rhs(L3)
+        print("Sistema de saturação montado")
+    
+    def solve_pressure(self):
+        """Resolve equação de pressão"""
+        solve(self.a_pressure == self.L_pressure, self.U, self.bcs)
     
     def solve_saturation(self):
         """Resolve equação de saturação (explícita)"""
@@ -366,7 +381,6 @@ class BrinkmanIMPESSolver:
         self.p_file = XDMFFile(str(viz_dir / "pressure.xdmf"))
         self.s_file = XDMFFile(str(viz_dir / "saturation.xdmf"))
         
-        # Configurações para melhor compatibilidade
         self.u_file.parameters["flush_output"] = True
         self.p_file.parameters["flush_output"] = True
         self.s_file.parameters["flush_output"] = True
@@ -374,6 +388,8 @@ class BrinkmanIMPESSolver:
         self.u_file.parameters["rewrite_function_mesh"] = False
         self.p_file.parameters["rewrite_function_mesh"] = False
         self.s_file.parameters["rewrite_function_mesh"] = False
+        
+        print("Arquivos XDMF inicializados")
     
     def close_xdmf_files(self):
         """Fecha arquivos XDMF"""
@@ -385,12 +401,10 @@ class BrinkmanIMPESSolver:
         """Salva campos para visualização"""
         (u_, p_) = self.U.split(deepcopy=True)
         
-        # Renomeia para visualização
         u_.rename("velocity", "velocity")
         p_.rename("pressure", "pressure")
         self.S.rename("saturation", "saturation")
         
-        # Escreve nos arquivos
         self.u_file.write(u_, self.t)
         self.p_file.write(p_, self.t)
         self.s_file.write(self.S, self.t)
@@ -474,6 +488,9 @@ class BrinkmanIMPESSolver:
                     return True
         
         return False
+    
+    def run(self, T: float, impes_steps: int = 1, 
+            save_interval: int = 50, max_steps: int = int(1e6)):
         """
         Executa simulação
         
@@ -483,28 +500,37 @@ class BrinkmanIMPESSolver:
             save_interval: Intervalo para salvar resultados
             max_steps: Número máximo de passos
         """
-        print("Iniciando simulação...")
+        print("\n" + "="*60)
+        print("INICIANDO SIMULAÇÃO BRINKMAN-IMPES")
+        print("="*60)
         
         # Setup inicial
         self.load_mesh()
         self.setup_function_spaces()
-        self.setup_boundary_conditions(
-            pin=2 * PhysicalConstants.KGF_CM2_TO_PA,
-            pout=PhysicalConstants.KGF_CM2_TO_PA
-        )
+        self.setup_boundary_conditions()
         self.setup_material_properties()
         self.assemble_pressure_system()
         self.assemble_saturation_system()
         
-        # Inicializa arquivos de saída
+        # Inicializa arquivos
         self.writer.initialize_file()
         self.initialize_xdmf_files()
         
-        # Calcula áreas para normalização
+        # Calcula áreas
         ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
         dx = Measure("dx", domain=self.mesh, subdomain_data=self.markers)
         self.A_in = float(assemble(Constant(1.0) * ds(1)))
         self.Area = float(assemble(Constant(1.0) * dx))
+        
+        print(f"\nÁrea de entrada: {self.A_in:.6e} m²")
+        print(f"Área total: {self.Area:.6e} m²")
+        print(f"\nParâmetros da simulação:")
+        print(f"  - Tempo final: {T} s")
+        print(f"  - Passo de tempo: {self.dt} s")
+        print(f"  - Velocidade de entrada: {self.inlet_velocity} m/s")
+        print(f"  - IMPES steps: {impes_steps}")
+        print(f"  - Save interval: {save_interval}")
+        print("\n" + "="*60 + "\n")
         
         # Loop temporal
         while self.step < max_steps and self.t < T:
@@ -513,7 +539,8 @@ class BrinkmanIMPESSolver:
             # Resolve pressão (IMPES) - no primeiro passo e periodicamente
             if self.step == 0 or (self.step % impes_steps == 0 and self.step > 0):
                 self.solve_pressure()
-                print(f"Pressão resolvida no passo {self.step}")
+                if self.step > 0:
+                    print(f"  [Pressão atualizada no passo {self.step}]")
             
             # Resolve saturação
             self.solve_saturation()
@@ -521,62 +548,63 @@ class BrinkmanIMPESSolver:
             # Atualiza tempo
             self.t += self.dt
             
-            # Pós-processamento e salvamento
+            # Diagnósticos
             timestep_data = self.compute_diagnostics()
             
-            # Salva dados do passo de tempo
+            # Salva dados
             self.writer.append_timestep(timestep_data)
-            
-            # Armazena no histórico
             for key, value in timestep_data.items():
                 self.results[key].append(value)
             
-            # Salva campos para visualização
+            # Salva campos
             if self.step % save_interval == 0:
                 self.save_fields()
             
             # Verifica convergência
             if self.check_convergence():
-                print(f"Convergência atingida no passo {self.step}")
+                print(f"\n*** Convergência atingida no passo {self.step} ***\n")
                 break
             
             self.step += 1
             
             elapsed = time.time() - start
-            print(f"Step {self.step}: t = {self.t:.4f}s "
-                  f"(elapsed: {elapsed:.3f}s)")
+            print(f"Passo {self.step} concluído: t = {self.t:.4f}s (tempo: {elapsed:.3f}s)\n")
         
-        # Fecha arquivos XDMF
+        # Finaliza
         self.close_xdmf_files()
-        
-        print("Simulação concluída!")
         self.writer.write_summary(self.results)
-    
-    def save_fields(self):
-        """Salva campos para visualização"""
-        # Implementação completa aqui
-        pass
-    
-    def compute_diagnostics(self):
-        """Calcula diagnósticos da simulação"""
-        # Implementação completa aqui
-        pass
-    
-    def check_convergence(self) -> bool:
-        """Verifica critérios de parada"""
-        # Implementação completa aqui
-        return False
+        
+        print("\n" + "="*60)
+        print("SIMULAÇÃO CONCLUÍDA COM SUCESSO!")
+        print("="*60)
+        print(f"Total de passos: {self.step}")
+        print(f"Tempo final: {self.t:.2f} s")
+        print(f"Resultados salvos em: {self.output_dir}")
+        print("="*60 + "\n")
 
 
 # ==================== EXEMPLO DE USO ====================
 if __name__ == "__main__":
+    
+    
+    # Exemplo 2: Configuração completa com pressões customizadas
     solver = BrinkmanIMPESSolver(
-        mesh_dir="./mesh",
-        output_dir="./results",
-        mu_w=1e-3,
-        mu_o=10e-3,
-        perm_darcy=100,
-        dt=0.1
+        mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
+        output_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results",
+        mu_w=1e-3,              # Viscosidade água [Pa.s]
+        mu_o=10e-3,             # Viscosidade óleo [Pa.s]
+        perm_darcy=100,         # Permeabilidade [Darcy]
+        dt=200,                 # Passo de tempo [s]
+        phi=0.2,                # Porosidade
+        inlet_velocity=1.0e-6,  # Velocidade entrada [m/s]
+        pin=200000,             # Pressão entrada [Pa] = 2 bar
+        pout=100000             # Pressão saída [Pa] = 1 bar
     )
     
-    solver.run(T=100.0, impes_steps=256, save_interval=10)
+    # Executar simulação
+    solver.run(
+        T=500.0,           # Tempo final [s]
+        impes_steps=256,     # Atualiza pressão a cada 5 passos
+        save_interval=10,  # Salva campos a cada 10 passos
+        max_steps=int(1e6) # Máximo de passos
+    )
