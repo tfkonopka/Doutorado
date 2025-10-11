@@ -132,7 +132,12 @@ class BrinkmanIMPESSolver:
                  phi: float = 0.2,
                  inlet_velocity: float = 1.0e-6,
                  pin: float = None,
-                 pout: float = None):
+                 pout: float = None,
+                 adaptive_dt: bool = False,
+                 CFL_max: float = 0.5,
+                 dt_min: float = 1e-6,
+                 dt_max: float = 10.0,
+                 checkpoint_interval: int = 0):
         """
         Inicializa o solver
         
@@ -142,11 +147,16 @@ class BrinkmanIMPESSolver:
             mu_w: Viscosidade da água [Pa.s]
             mu_o: Viscosidade do óleo [Pa.s]
             perm_darcy: Permeabilidade em Darcy
-            dt: Passo de tempo [s]
+            dt: Passo de tempo inicial [s]
             phi: Porosidade [-]
             inlet_velocity: Velocidade na entrada [m/s] (componente x)
             pin: Pressão de entrada [Pa] (se None, usa 2*KGF_CM2_TO_PA)
             pout: Pressão de saída [Pa] (se None, usa KGF_CM2_TO_PA)
+            adaptive_dt: Se True, usa passo de tempo adaptativo
+            CFL_max: Número de CFL máximo para dt adaptativo
+            dt_min: Passo de tempo mínimo [s]
+            dt_max: Passo de tempo máximo [s]
+            checkpoint_interval: Salva checkpoint a cada N passos (0 = desativado)
         """
         self.mesh_dir = Path(mesh_dir)
         self.output_dir = Path(output_dir)
@@ -166,6 +176,12 @@ class BrinkmanIMPESSolver:
         
         # Parâmetros numéricos
         self.dt = dt
+        self.dt_initial = dt
+        self.adaptive_dt = adaptive_dt
+        self.CFL_max = CFL_max
+        self.dt_min = dt_min
+        self.dt_max = dt_max
+        self.checkpoint_interval = checkpoint_interval
         self.t = 0.0
         self.step = 0
         
@@ -210,27 +226,7 @@ class BrinkmanIMPESSolver:
             infile.read(mvc)
         self.boundaries = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
         print("Mesh carregada com sucesso")
-
-    def adaptive_timestep(self, CFL_max=0.5):
-        """Calcula passo de tempo adaptativo baseado em CFL"""
-        (u_, p_) = self.U.split()
-        
-        # Velocidade máxima
-        u_max = u_.vector().norm('linf')
-        
-        # Tamanho mínimo da célula
-        h_min = self.mesh.hmin()
-        
-        # Novo dt baseado em CFL
-        dt_new = CFL_max * h_min / (u_max + 1e-10)
-        
-        # Limita variação do dt
-        dt_new = max(min(dt_new, 2*self.dt), 0.5*self.dt)
-        
-        return dt_new    
-
-
-
+    
     def setup_function_spaces(self, order: int = 1):
         """Define espaços de funções"""
         print("Configurando espaços de funções...")
@@ -416,7 +412,6 @@ class BrinkmanIMPESSolver:
         self.u_file.close()
         self.p_file.close()
         self.s_file.close()
-        
     
     def save_fields(self):
         """Salva campos para visualização"""
@@ -431,42 +426,6 @@ class BrinkmanIMPESSolver:
         self.s_file.write(self.S, self.t)
         
         print(f"  -> Campos salvos em t = {self.t:.4f}s")
-
-    def save_checkpoint(self, filename="checkpoint.h5"):
-        """Salva estado da simulação"""
-        checkpoint_file = HDF5File(self.mesh.mpi_comm(), 
-                                str(self.output_dir / filename), "w")
-        checkpoint_file.write(self.U, "velocity_pressure")
-        checkpoint_file.write(self.S, "saturation")
-        checkpoint_file.write(self.mesh, "mesh")
-        checkpoint_file.close()
-        
-        # Salva metadados
-        import json
-        metadata = {
-            'time': self.t,
-            'step': self.step,
-            'dt': self.dt
-        }
-        with open(self.output_dir / "checkpoint_metadata.json", 'w') as f:
-            json.dump(metadata, f)
-
-    def load_checkpoint(self, filename="checkpoint.h5"):
-        """Carrega estado da simulação"""
-        checkpoint_file = HDF5File(self.mesh.mpi_comm(), 
-                                str(self.output_dir / filename), "r")
-        checkpoint_file.read(self.U, "velocity_pressure")
-        checkpoint_file.read(self.S, "saturation")
-        checkpoint_file.close()
-        
-        # Carrega metadados
-        import json
-        with open(self.output_dir / "checkpoint_metadata.json", 'r') as f:
-            metadata = json.load(f)
-        
-        self.t = metadata['time']
-        self.step = metadata['step']
-        self.dt = metadata['dt']
     
     def compute_diagnostics(self) -> Dict[str, float]:
         """Calcula diagnósticos da simulação"""
@@ -508,6 +467,8 @@ class BrinkmanIMPESSolver:
         uout = float(assemble(dot(u_, n) * ds(3)))
         mass_balance_error = abs(abs(uin) - abs(uout))
         
+        print(f"  dt atual={self.dt:.6e} s")
+        print(f"  dt atual={self.dt:.6e} s")
         print(f"  Sin={Sin:.4f}, Sout={Sout:.4f}, Sdx={Sdx:.4f}")
         print(f"  Qo={Qo:.6e}, Qw={Qw:.6e}, pin={pin:.2f} Pa")
         print(f"  Balanço de massa: erro={mass_balance_error:.6e}")
@@ -546,8 +507,160 @@ class BrinkmanIMPESSolver:
         
         return False
     
+    def compute_adaptive_timestep(self):
+        """
+        Calcula passo de tempo adaptativo baseado no número de CFL
+        CFL = u * dt / h
+        """
+        if not self.adaptive_dt:
+            return self.dt
+        
+        (u_, p_) = self.U.split()
+        
+        # Velocidade máxima no domínio
+        u_array = u_.vector().get_local()
+        u_magnitude = np.sqrt(u_array[::2]**2 + u_array[1::2]**2)
+        u_max = np.max(u_magnitude)
+        
+        if u_max < 1e-15:
+            # Velocidade muito pequena, usa dt máximo
+            dt_new = self.dt_max
+        else:
+            # Tamanho mínimo da célula
+            h_min = self.mesh.hmin()
+            
+            # Calcula dt baseado em CFL
+            dt_new = self.CFL_max * h_min / u_max
+            
+            # Limita variação do dt (máx 50% de mudança por passo)
+            dt_new = max(min(dt_new, 1.5 * self.dt), 0.75 * self.dt)
+            
+            # Aplica limites globais
+            dt_new = max(min(dt_new, self.dt_max), self.dt_min)
+        
+        return dt_new
+    
+    def update_timestep(self):
+        """Atualiza o passo de tempo se adaptativo estiver ativado"""
+        if self.adaptive_dt:
+            dt_old = self.dt
+            self.dt = self.compute_adaptive_timestep()
+            
+            if abs(self.dt - dt_old) > 1e-10:
+                print(f"  -> dt ajustado: {dt_old:.6e} → {self.dt:.6e} s")
+                # Precisa remontar o sistema de saturação com novo dt
+                self.assemble_saturation_system()
+    
+    def save_checkpoint(self, checkpoint_name: str = "checkpoint"):
+        """
+        Salva estado completo da simulação para restart
+        
+        Args:
+            checkpoint_name: Nome do checkpoint (sem extensão)
+        """
+        import json
+        
+        checkpoint_dir = self.output_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+        
+        checkpoint_file = checkpoint_dir / f"{checkpoint_name}.h5"
+        metadata_file = checkpoint_dir / f"{checkpoint_name}_metadata.json"
+        results_file = checkpoint_dir / f"{checkpoint_name}_results.json"
+        
+        print(f"  -> Salvando checkpoint: {checkpoint_name}")
+        
+        # Salva campos FEniCS
+        hdf = HDF5File(self.mesh.mpi_comm(), str(checkpoint_file), "w")
+        hdf.write(self.U, "velocity_pressure")
+        hdf.write(self.S, "saturation")
+        hdf.write(self.s0, "saturation_old")
+        hdf.close()
+        
+        # Salva metadados da simulação
+        metadata = {
+            'time': float(self.t),
+            'step': int(self.step),
+            'dt': float(self.dt),
+            'dt_initial': float(self.dt_initial),
+            'adaptive_dt': self.adaptive_dt,
+            'CFL_max': float(self.CFL_max),
+            'dt_min': float(self.dt_min),
+            'dt_max': float(self.dt_max),
+            'mu_w': float(self.mu_w),
+            'mu_o': float(self.mu_o),
+            'phi': float(self.phi),
+            'k_matrix': float(self.k_matrix),
+            'inlet_velocity': float(self.inlet_velocity),
+            'pin_value': float(self.pin_value),
+            'pout_value': float(self.pout_value)
+        }
+        
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+        
+        # Salva histórico de resultados
+        with open(results_file, 'w') as f:
+            json.dump(self.results, f, indent=2)
+        
+        print(f"     Checkpoint salvo com sucesso!")
+    
+    def load_checkpoint(self, checkpoint_name: str = "checkpoint"):
+        """
+        Carrega estado da simulação de um checkpoint
+        
+        Args:
+            checkpoint_name: Nome do checkpoint (sem extensão)
+        
+        Returns:
+            True se carregou com sucesso, False caso contrário
+        """
+        import json
+        
+        checkpoint_dir = self.output_dir / "checkpoints"
+        checkpoint_file = checkpoint_dir / f"{checkpoint_name}.h5"
+        metadata_file = checkpoint_dir / f"{checkpoint_name}_metadata.json"
+        results_file = checkpoint_dir / f"{checkpoint_name}_results.json"
+        
+        # Verifica se arquivos existem
+        if not checkpoint_file.exists():
+            print(f"Checkpoint não encontrado: {checkpoint_file}")
+            return False
+        
+        print(f"Carregando checkpoint: {checkpoint_name}")
+        
+        try:
+            # Carrega campos FEniCS
+            hdf = HDF5File(self.mesh.mpi_comm(), str(checkpoint_file), "r")
+            hdf.read(self.U, "velocity_pressure")
+            hdf.read(self.S, "saturation")
+            hdf.read(self.s0, "saturation_old")
+            hdf.close()
+            
+            # Carrega metadados
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+            
+            self.t = metadata['time']
+            self.step = metadata['step']
+            self.dt = metadata['dt']
+            self.dt_initial = metadata['dt_initial']
+            
+            # Carrega histórico de resultados
+            with open(results_file, 'r') as f:
+                self.results = json.load(f)
+            
+            print(f"  Checkpoint carregado com sucesso!")
+            print(f"  Reiniciando do passo {self.step}, t = {self.t:.4f} s")
+            
+            return True
+            
+        except Exception as e:
+            print(f"Erro ao carregar checkpoint: {e}")
+            return False
+    
     def run(self, T: float, impes_steps: int = 1, 
-            save_interval: int = 50, max_steps: int = int(1e6)):
+            save_interval: int = 50, max_steps: int = int(1e6),
+            restart_from_checkpoint: str = None):
         """
         Executa simulação
         
@@ -556,6 +669,7 @@ class BrinkmanIMPESSolver:
             impes_steps: Frequência de atualização da pressão
             save_interval: Intervalo para salvar resultados
             max_steps: Número máximo de passos
+            restart_from_checkpoint: Nome do checkpoint para reiniciar (None = nova simulação)
         """
         print("\n" + "="*60)
         print("INICIANDO SIMULAÇÃO BRINKMAN-IMPES")
@@ -569,9 +683,20 @@ class BrinkmanIMPESSolver:
         self.assemble_pressure_system()
         self.assemble_saturation_system()
         
-        # Inicializa arquivos
-        self.writer.initialize_file()
-        self.initialize_xdmf_files()
+        # Tenta carregar checkpoint se especificado
+        if restart_from_checkpoint is not None:
+            if self.load_checkpoint(restart_from_checkpoint):
+                print("\n*** REINICIANDO DE CHECKPOINT ***\n")
+            else:
+                print("\n*** CHECKPOINT NÃO ENCONTRADO - INICIANDO NOVA SIMULAÇÃO ***\n")
+        
+        # Inicializa arquivos apenas se for nova simulação
+        if restart_from_checkpoint is None or self.step == 0:
+            self.writer.initialize_file()
+            self.initialize_xdmf_files()
+        else:
+            # Reabre arquivos XDMF para append
+            self.initialize_xdmf_files()
         
         # Calcula áreas
         ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
@@ -583,10 +708,19 @@ class BrinkmanIMPESSolver:
         print(f"Área total: {self.Area:.6e} m²")
         print(f"\nParâmetros da simulação:")
         print(f"  - Tempo final: {T} s")
-        print(f"  - Passo de tempo: {self.dt} s")
+        print(f"  - Passo de tempo inicial: {self.dt} s")
+        if self.adaptive_dt:
+            print(f"  - Passo de tempo ADAPTATIVO ativado")
+            print(f"    * CFL_max: {self.CFL_max}")
+            print(f"    * dt_min: {self.dt_min:.6e} s")
+            print(f"    * dt_max: {self.dt_max:.6e} s")
+        else:
+            print(f"  - Passo de tempo FIXO")
         print(f"  - Velocidade de entrada: {self.inlet_velocity} m/s")
         print(f"  - IMPES steps: {impes_steps}")
         print(f"  - Save interval: {save_interval}")
+        if self.checkpoint_interval > 0:
+            print(f"  - Checkpoint interval: {self.checkpoint_interval} passos")
         print("\n" + "="*60 + "\n")
         
         # Loop temporal
@@ -601,6 +735,10 @@ class BrinkmanIMPESSolver:
             
             # Resolve saturação
             self.solve_saturation()
+            
+            # Atualiza passo de tempo se adaptativo
+            if self.adaptive_dt and self.step > 0:
+                self.update_timestep()
             
             # Atualiza tempo
             self.t += self.dt
@@ -617,15 +755,31 @@ class BrinkmanIMPESSolver:
             if self.step % save_interval == 0:
                 self.save_fields()
             
+            # Salva checkpoint periodicamente
+            if self.checkpoint_interval > 0 and self.step % self.checkpoint_interval == 0 and self.step > 0:
+                self.save_checkpoint(f"checkpoint_step_{self.step}")
+            
             # Verifica convergência
             if self.check_convergence():
                 print(f"\n*** Convergência atingida no passo {self.step} ***\n")
+                # Salva checkpoint final antes de sair
+                if self.checkpoint_interval > 0:
+                    self.save_checkpoint("checkpoint_final")
                 break
             
             self.step += 1
             
             elapsed = time.time() - start
-            print(f"Passo {self.step} concluído: t = {self.t:.4f}s (tempo: {elapsed:.3f}s)\n")
+            
+            # Informação sobre o passo de tempo
+            if self.adaptive_dt:
+                print(f"Passo {self.step} concluído: t = {self.t:.4f}s | dt = {self.dt:.6e}s | tempo: {elapsed:.3f}s\n")
+            else:
+                print(f"Passo {self.step} concluído: t = {self.t:.4f}s | dt fixo = {self.dt:.6e}s | tempo: {elapsed:.3f}s\n")
+        
+        # Salva checkpoint final
+        if self.checkpoint_interval > 0:
+            self.save_checkpoint("checkpoint_final")
         
         # Finaliza
         self.close_xdmf_files()
@@ -643,32 +797,95 @@ class BrinkmanIMPESSolver:
 # ==================== EXEMPLO DE USO ====================
 if __name__ == "__main__":
     
+    # ========== EXEMPLO 1: SEM checkpoints (padrão) ==========
+    print("\n>>> EXEMPLO 1: Simulação SEM checkpoints <<<\n")
     
-    # Exemplo 2: Configuração completa com pressões customizadas
-    solver = BrinkmanIMPESSolver(
+    solver1 = BrinkmanIMPESSolver(
+        mesh_dir="./mesh",
+        output_dir="./results",
+        mu_w=1e-3,
+        mu_o=10e-3,
+        perm_darcy=100,
+        dt=0.1,
+        inlet_velocity=1.0e-6,
+        checkpoint_interval=0  # 0 = sem checkpoints (padrão)
+    )
+    
+    # solver1.run(T=100.0, impes_steps=5, save_interval=10)
+    
+    
+    # ========== EXEMPLO 2: COM checkpoints automáticos ==========
+    print("\n>>> EXEMPLO 2: Simulação COM checkpoints <<<\n")
+    
+    solver2 = BrinkmanIMPESSolver(
+        mesh_dir="./mesh",
+        output_dir="./results_checkpoint",
+        mu_w=1e-3,
+        mu_o=10e-3,
+        perm_darcy=100,
+        dt=0.1,
+        inlet_velocity=1.0e-6,
+        checkpoint_interval=100  # ← Salva checkpoint a cada 100 passos
+    )
+    
+    # solver2.run(T=100.0, impes_steps=5, save_interval=10)
+    
+    
+    # ========== EXEMPLO 3: REINICIAR de checkpoint ==========
+    print("\n>>> EXEMPLO 3: REINICIAR simulação de checkpoint <<<\n")
+    
+    solver3 = BrinkmanIMPESSolver(
+        mesh_dir="./mesh",
+        output_dir="./results_checkpoint",
+        mu_w=1e-3,
+        mu_o=10e-3,
+        perm_darcy=100,
+        dt=0.1,
+        inlet_velocity=1.0e-6,
+        checkpoint_interval=100
+    )
+    
+    # Reinicia do último checkpoint
+    # solver3.run(
+    #     T=200.0,  # Continua até t=200
+    #     impes_steps=5,
+    #     save_interval=10,
+    #     restart_from_checkpoint="checkpoint_final"  # ← Reinicia daqui
+    # )
+    
+    
+    # ========== EXEMPLO 4: Configuração COMPLETA ==========
+    print("\n>>> EXEMPLO 4: Configuração COMPLETA com tudo ativado <<<\n")
+    
+    solver_completo = BrinkmanIMPESSolver(
         mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
         output_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results",
-        mu_w=1e-3,              # Viscosidade água [Pa.s]
-        mu_o=1e-3,             # Viscosidade óleo [Pa.s]
-        perm_darcy=100,         # Permeabilidade [Darcy]
-        dt=200,                 # Passo de tempo [s]
-        phi=0.2,                # Porosidade
-        inlet_velocity=1.0e-6,  # Velocidade entrada [m/s]
-        pin=200000,             # Pressão entrada [Pa] = 2 bar
-        pout=100000             # Pressão saída [Pa] = 1 bar
+        mu_w=1e-3,
+        mu_o=1e-3,
+        perm_darcy=100,
+        dt=0.1,
+        phi=0.2,
+        inlet_velocity=5.0e-6,
+        pin=200000,
+        pout=100000,
+        adaptive_dt=True,           # ← dt adaptativo
+        CFL_max=0.5,
+        dt_min=50,
+        dt_max=500,
+        checkpoint_interval=500     # ← Checkpoint a cada 500 passos
     )
-
-    try:
-    # Tenta carregar checkpoint
-        solver.load_checkpoint()
-        print(f"Checkpoint carregado! Continuando do passo {solver.step}")
-    except:
-        print("Iniciando nova simulação")
     
-    # Executar simulação
-    solver.run(
-        T=1000000.0,           # Tempo final [s]
-        impes_steps=256,     # Atualiza pressão a cada 5 passos
-        save_interval=10,  # Salva campos a cada 10 passos
-        max_steps=int(1e6) # Máximo de passos
+    # Executar simulação nova
+    solver_completo.run(
+        T=100.0,
+        impes_steps=256,
+        save_interval=10
     )
+    
+    # OU reiniciar de checkpoint se a simulação foi interrompida:
+    # solver_completo.run(
+    #     T=200.0,
+    #     impes_steps=256,
+    #     save_interval=10,
+    #     restart_from_checkpoint="checkpoint_step_500"  # ou "checkpoint_final"
+    # )
