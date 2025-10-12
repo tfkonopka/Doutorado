@@ -518,19 +518,50 @@ class BrinkmanIMPESSolver:
         
         return dt_new
 
+# Substitua os métodos compute_dt_peclet e compute_adaptive_timestep_hybrid 
+# pelas versões corrigidas acima
+
+    def compute_dt_peclet(self):
+        """CFL baseado no número de Péclet local - CORRIGIDO"""
+        (u_, p_) = self.U.split()
+        
+        DG0 = FunctionSpace(self.mesh, "DG", 0)
+        
+        # Critério CFL baseado em u/h (mais direto e robusto)
+        u_magnitude = sqrt(inner(u_, u_))
+        h_cell = CellDiameter(self.mesh)
+        cfl_criterion = u_magnitude / h_cell
+        
+        cfl_proj = project(cfl_criterion, DG0)
+        cfl_array = cfl_proj.vector().get_local()
+        
+        # Remove valores muito pequenos
+        cfl_array = cfl_array[cfl_array > 1e-12]
+        
+        if len(cfl_array) == 0:
+            return self.dt_max
+        
+        # Usa percentil 90
+        cfl_max = np.percentile(cfl_array, 90)
+        
+        if cfl_max < 1e-12:
+            return self.dt_max
+        
+        dt_new = self.CFL_max / cfl_max
+        
+        return dt_new
+
     def compute_adaptive_timestep_hybrid(self):
-        """
-        Método híbrido que combina múltiplos critérios
-        """
+        """Método híbrido simplificado e mais robusto"""
         if not self.adaptive_dt:
             return self.dt
         
         dt_candidates = []
         
-        # Critério 1: CFL baseado em Péclet local
-        dt_peclet = self.compute_dt_peclet()
-        if dt_peclet > 0:
-            dt_candidates.append(dt_peclet)
+        # Critério 1: CFL local
+        dt_local = self.compute_adaptive_timestep_local()
+        if dt_local > 0:
+            dt_candidates.append(dt_local)
         
         # Critério 2: Variação de saturação
         if len(self.results['time']) >= 2:
@@ -538,13 +569,16 @@ class BrinkmanIMPESSolver:
             if dt_sat > 0:
                 dt_candidates.append(dt_sat)
         
-        # Critério 3: Estabilidade DG (diffusion)
-        dt_dg = self.compute_dt_dg_stability()
-        if dt_dg > 0:
-            dt_candidates.append(dt_dg)
+        # Critério 3: Estabilidade DG simplificada
+        try:
+            dt_dg = self.compute_dt_dg_stability_simple()
+            if dt_dg > 0:
+                dt_candidates.append(dt_dg)
+        except Exception as e:
+            print(f"  Aviso: Erro no critério DG: {e}")
         
         # Critério 4: Baseado no residual
-        if self.step > 10:  # Só após alguns passos
+        if self.step > 10:
             dt_residual = self.compute_dt_residual()
             if dt_residual > 0:
                 dt_candidates.append(dt_residual)
@@ -552,67 +586,52 @@ class BrinkmanIMPESSolver:
         if not dt_candidates:
             return self.dt_max
         
-        # Usa o mais restritivo
         dt_new = min(dt_candidates)
         
-        # Suavização temporal (evita oscilações)
+        # Suavização temporal
         if hasattr(self, 'dt_history'):
             self.dt_history.append(dt_new)
             if len(self.dt_history) > 5:
                 self.dt_history.pop(0)
-            # Média móvel
             dt_new = np.mean(self.dt_history)
         else:
             self.dt_history = [dt_new]
         
         # Limita variação máxima por passo
         dt_new = max(min(dt_new, 1.1 * self.dt), 0.9 * self.dt)
-        
-        # Aplica limites globais
         dt_new = max(min(dt_new, self.dt_max), self.dt_min)
         
         return dt_new
 
-    def compute_dt_peclet(self):
-        """CFL baseado no número de Péclet local"""
+    def compute_dt_dg_stability_simple(self):
+        """Versão simplificada da estabilidade DG"""
         (u_, p_) = self.U.split()
         
         DG0 = FunctionSpace(self.mesh, "DG", 0)
         
-        # Velocidade efetiva
-        u_eff = project(sqrt(inner(u_, u_)), DG0)
+        u_mag = project(sqrt(inner(u_, u_)), DG0)
         h = project(CellDiameter(self.mesh), DG0)
         
-        # Difusão numérica do DG (proporcional a u*h)
-        # Para DG upwind, a difusão numérica é ~0.5*u*h
-        diffusion_num = 0.5 * u_eff * h
-        
-        u_array = u_eff.vector().get_local()
+        u_array = u_mag.vector().get_local()
         h_array = h.vector().get_local()
-        diff_array = diffusion_num.vector().get_local()
         
-        # Péclet local = u*h/D_num
-        peclet_local = np.where(
-            diff_array > 1e-12,
-            u_array * h_array / diff_array,
-            0.0
-        )
+        h_array = np.where(h_array > 1e-12, h_array, 1e-12)
+        cfl_array = u_array / h_array
+        cfl_array = cfl_array[cfl_array > 1e-12]
         
-        # Remove zeros
-        peclet_local = peclet_local[peclet_local > 1e-10]
-        
-        if len(peclet_local) == 0:
+        if len(cfl_array) == 0:
             return self.dt_max
         
-        # Critério: Péclet < 2 para boa estabilidade
-        peclet_max = np.percentile(peclet_local, 90)
+        cfl_max = np.percentile(cfl_array, 90)
         
-        if peclet_max < 1e-10:
+        if cfl_max < 1e-12:
             return self.dt_max
         
-        dt_new = 2.0 / peclet_max * self.CFL_max
+        dt_new = 0.5 * self.CFL_max / cfl_max
         
         return dt_new
+
+
 
     def compute_dt_saturation_variation(self):
         """Baseado na taxa de variação da saturação"""
