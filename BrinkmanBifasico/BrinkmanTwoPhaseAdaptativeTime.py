@@ -1,6 +1,7 @@
 """
 Biblioteca para simulação de fluxo bifásico usando método Brinkman-IMPES
 Versão Melhorada - Com estratégia robusta de passo de tempo adaptativo por fases
+e proteções explícitas de limites de dt
 """
 
 from fenics import *
@@ -120,7 +121,7 @@ class BrinkmanIMPESSolver:
     Solver para simulação de fluxo bifásico óleo-água usando
     método IMPES (Implicit Pressure Explicit Saturation) com
     equação de Brinkman para meios vuggy e estratégia robusta
-    de passo de tempo adaptativo por fases
+    de passo de tempo adaptativo por fases com proteções explícitas
     """
 
     def __init__(self, 
@@ -177,9 +178,9 @@ class BrinkmanIMPESSolver:
         self.pin_value = pin if pin is not None else 2 * PhysicalConstants.KGF_CM2_TO_PA
         self.pout_value = pout if pout is not None else PhysicalConstants.KGF_CM2_TO_PA
 
-        # Parâmetros numéricos
-        self.dt = dt
-        self.dt_initial = dt
+        # Parâmetros numéricos com validação
+        self.dt = max(min(dt, dt_max), dt_min)  # Garante que dt inicial está nos limites
+        self.dt_initial = self.dt
         self.adaptive_dt = adaptive_dt
         self.CFL_max = CFL_max
         self.dt_min = dt_min
@@ -188,6 +189,10 @@ class BrinkmanIMPESSolver:
         self.checkpoint_interval = checkpoint_interval
         self.t = 0.0
         self.step = 0
+
+        # Validação de limites
+        if self.dt_min >= self.dt_max:
+            raise ValueError(f"dt_min ({dt_min:.2e}) deve ser menor que dt_max ({dt_max:.2e})")
 
         # ========== NOVA ESTRATÉGIA ROBUSTA POR FASES ==========
         
@@ -233,6 +238,33 @@ class BrinkmanIMPESSolver:
             'phase': [],
             'convergence_failures': []
         }
+
+        print(f"BrinkmanIMPESSolver inicializado com proteções de limite:")
+        print(f"  dt_min = {self.dt_min:.2e} s")
+        print(f"  dt_max = {self.dt_max:.2e} s") 
+        print(f"  dt_inicial = {self.dt:.2e} s")
+
+    def _validate_dt(self, dt_value: float, context: str = "") -> float:
+        """
+        Valida e corrige um valor de dt, garantindo que está nos limites
+        
+        Args:
+            dt_value: Valor de dt a ser validado
+            context: Contexto para debug (nome do método que chamou)
+            
+        Returns:
+            dt corrigido e dentro dos limites
+        """
+        if not np.isfinite(dt_value) or dt_value <= 0:
+            print(f"  Aviso {context}: dt inválido ({dt_value}), usando dt_min")
+            return self.dt_min
+            
+        dt_corrected = np.clip(dt_value, self.dt_min, self.dt_max)
+        
+        if abs(dt_corrected - dt_value) > 1e-15:
+            print(f"  Aviso {context}: dt ajustado de {dt_value:.2e} para {dt_corrected:.2e}")
+            
+        return dt_corrected
 
     def load_mesh(self):
         """Carrega mesh e marcadores"""
@@ -365,7 +397,9 @@ class BrinkmanIMPESSolver:
         ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
         n = FacetNormal(self.mesh)
 
-        dt_const = Constant(self.dt)
+        # Valida dt antes de usar
+        validated_dt = self._validate_dt(self.dt, "assemble_saturation")
+        dt_const = Constant(validated_dt)
         sbar = Constant(1.0)  # Saturação de injeção
 
         # Fluxos upwind
@@ -430,90 +464,115 @@ class BrinkmanIMPESSolver:
             print(f"    Erro na equação de saturação: {e}")
             return False
 
-    # ==================== NOVA ESTRATÉGIA ROBUSTA POR FASES ====================
+    # ==================== NOVA ESTRATÉGIA ROBUSTA POR FASES COM PROTEÇÕES ====================
 
     def compute_adaptive_timestep_local(self):
         """
-        Método CFL local - critério principal da nova estratégia robusta
+        Método CFL local com proteções explícitas de limite
         """
         if not self.adaptive_dt:
-            return self.dt
+            return self._validate_dt(self.dt, "local_fixed")
 
-        (u_, p_) = self.U.split()
+        try:
+            (u_, p_) = self.U.split()
 
-        # Projeta velocidade para DG0
-        DG0 = FunctionSpace(self.mesh, "DG", 0)
-        u_magnitude = project(sqrt(inner(u_, u_)), DG0)
-        h_cell = project(CellDiameter(self.mesh), DG0)
+            # Projeta velocidade para DG0
+            DG0 = FunctionSpace(self.mesh, "DG", 0)
+            u_magnitude = project(sqrt(inner(u_, u_)), DG0)
+            h_cell = project(CellDiameter(self.mesh), DG0)
 
-        u_array = u_magnitude.vector().get_local()
-        h_array = h_cell.vector().get_local()
+            u_array = u_magnitude.vector().get_local()
+            h_array = h_cell.vector().get_local()
 
-        # Evita divisão por zero
-        h_array = np.where(h_array > 1e-12, h_array, 1e-12)
+            # Evita divisão por zero
+            h_array = np.where(h_array > 1e-12, h_array, 1e-12)
 
-        # CFL local
-        cfl_array = u_array / h_array
-        cfl_array = cfl_array[cfl_array > 1e-12]
+            # CFL local
+            cfl_array = u_array / h_array
+            cfl_array = cfl_array[cfl_array > 1e-12]
 
-        if len(cfl_array) == 0:
-            return self.dt_max
+            if len(cfl_array) == 0:
+                return self._validate_dt(self.dt_max, "local_no_velocity")
 
-        # Usa percentil 95 para robustez
-        cfl_max = np.percentile(cfl_array, 95)
+            # Usa percentil 95 para robustez
+            cfl_max = np.percentile(cfl_array, 95)
 
-        if cfl_max < 1e-12:
-            return self.dt_max
+            if cfl_max < 1e-12:
+                return self._validate_dt(self.dt_max, "local_low_cfl")
 
-        # CFL_max baseado na fase atual
-        cfl_target = self.phase_params[self.phase]['cfl_max']
-        dt_new = cfl_target / cfl_max
+            # CFL_max baseado na fase atual
+            cfl_target = self.phase_params[self.phase]['cfl_max']
+            dt_new = cfl_target / cfl_max
 
-        return dt_new
+            return self._validate_dt(dt_new, "local_computed")
+
+        except Exception as e:
+            print(f"    Erro no cálculo CFL local: {e}")
+            return self._validate_dt(min(self.dt, self.dt_max), "local_error")
 
     def compute_saturation_check(self):
-        """Verifica se a variação de saturação está controlada"""
-        if len(self.results['time']) < 1:
-            return self.dt_max
+        """Verificação de saturação com proteção de limites"""
+        try:
+            if len(self.results['time']) < 1:
+                return self._validate_dt(self.dt_max, "saturation_initial")
 
-        # Variação máxima de saturação
-        s_array = self.S.vector().get_local()
-        s_old_array = self.s0.vector().get_local()
+            # Variação máxima de saturação
+            s_array = self.S.vector().get_local()
+            s_old_array = self.s0.vector().get_local()
 
-        max_change = np.max(np.abs(s_array - s_old_array))
+            max_change = np.max(np.abs(s_array - s_old_array))
 
-        # Se variação é muito grande, limita dt
-        if max_change > self.max_saturation_change:
-            # Reduz dt proporcionalmente
-            factor = self.max_saturation_change / max_change
-            return self.dt * factor * 0.8  # margem de segurança
+            # Se variação é muito grande, limita dt
+            if max_change > self.max_saturation_change:
+                # Reduz dt proporcionalmente
+                factor = self.max_saturation_change / max_change
+                dt_limited = self.dt * factor * 0.8  # margem de segurança
+                return self._validate_dt(dt_limited, "saturation_limited")
 
-        return self.dt_max  # Não limita
+            return self._validate_dt(self.dt_max, "saturation_ok")
+
+        except Exception as e:
+            print(f"    Erro na verificação de saturação: {e}")
+            return self._validate_dt(self.dt, "saturation_error")
 
     def compute_adaptive_timestep_robust_phases(self):
         """
-        Nova estratégia robusta de passo de tempo adaptativo por fases
+        Nova estratégia robusta com múltiplas proteções de limite
+        GARANTIA: dt_min ≤ dt_new ≤ dt_max SEMPRE
         """
         if not self.adaptive_dt:
-            return self.dt
+            return self._validate_dt(self.dt, "robust_fixed")
 
-        # Critério principal: CFL local
-        dt_cfl = self.compute_adaptive_timestep_local()
+        try:
+            # Critério principal: CFL local (já protegido internamente)
+            dt_cfl = self.compute_adaptive_timestep_local()
 
-        # Critério de segurança: variação de saturação
-        dt_sat_check = self.compute_saturation_check()
+            # Critério de segurança: variação de saturação (já protegido internamente)
+            dt_sat_check = self.compute_saturation_check()
 
-        # Usa o mais restritivo
-        dt_new = min(dt_cfl, dt_sat_check)
+            # Usa o mais restritivo
+            dt_new = min(dt_cfl, dt_sat_check)
 
-        # Aplicar limitação de variação baseada na fase
-        max_variation = self.phase_params[self.phase]['dt_variation']
-        dt_new = max(min(dt_new, max_variation * self.dt), self.dt / max_variation)
+            # Aplicar limitação de variação baseada na fase
+            max_variation = self.phase_params[self.phase]['dt_variation']
+            dt_upper = min(max_variation * self.dt, self.dt_max)  # Nunca excede dt_max
+            dt_lower = max(self.dt / max_variation, self.dt_min)  # Nunca fica abaixo de dt_min
+            
+            dt_new = np.clip(dt_new, dt_lower, dt_upper)
 
-        # Limites globais
-        dt_new = max(min(dt_new, self.dt_max), self.dt_min)
+            # Proteção final absoluta
+            dt_new = self._validate_dt(dt_new, "robust_final")
 
-        return dt_new
+            # Verificação paranóica (debug)
+            assert self.dt_min <= dt_new <= self.dt_max, \
+                f"ERRO CRÍTICO: dt fora dos limites: {dt_new:.2e} não está em [{self.dt_min:.2e}, {self.dt_max:.2e}]"
+
+            return dt_new
+
+        except Exception as e:
+            print(f"    ERRO no cálculo robustos por fases: {e}")
+            print(f"    Retornando dt seguro = {min(self.dt, self.dt_max):.2e}")
+            return self._validate_dt(min(self.dt, self.dt_max), "robust_error_recovery")
 
     def check_phase_transition(self):
         """Verifica se deve mudar de fase"""
@@ -533,18 +592,20 @@ class BrinkmanIMPESSolver:
                 print(f"  → Transição para Fase 3 ({self.phase_params[3]['name']}) - CFL_max = {self.phase_params[3]['cfl_max']}")
 
     def handle_convergence_failure(self):
-        """Gerencia falhas de convergência"""
+        """Gerencia falhas de convergência com proteções"""
         self.consecutive_failures += 1
         self.consecutive_convergence = 0
 
         if self.consecutive_failures == 1:
             # Primeira falha: reduz dt moderadamente
-            self.dt *= 0.7
+            dt_new = self.dt * 0.7
+            self.dt = self._validate_dt(dt_new, "failure_moderate")
             print(f"    Falha de convergência. Reduzindo dt para {self.dt:.2e}")
 
         elif self.consecutive_failures <= 3:
             # Falhas múltiplas: redução mais agressiva
-            self.dt *= 0.5
+            dt_new = self.dt * 0.5
+            self.dt = self._validate_dt(dt_new, "failure_aggressive")
             print(f"    Falha {self.consecutive_failures}. dt = {self.dt:.2e}")
 
         else:
@@ -554,77 +615,96 @@ class BrinkmanIMPESSolver:
             self.consecutive_failures = 0
             print(f"    Reset para Fase 1. dt = {self.dt:.2e}")
 
-        # Garante que não fica abaixo do mínimo
-        self.dt = max(self.dt, self.dt_min)
+        # Garante que está nos limites (redundante, mas seguro)
+        self.dt = self._validate_dt(self.dt, "failure_final")
 
         # Remonta sistema de saturação com novo dt
         self.assemble_saturation_system()
 
     def compute_adaptive_timestep(self):
         """
-        Método principal que chama o método selecionado
+        Método principal que chama o método selecionado com proteções
         """
-        if self.dt_method == "robust_phases":
-            return self.compute_adaptive_timestep_robust_phases()
-        else:
-            # Mantém métodos originais para compatibilidade
-            methods = {
-                "classic": self.compute_adaptive_timestep_classic,
-                "local": self.compute_adaptive_timestep_local,
-            }
-            
-            if self.dt_method in methods:
-                return methods[self.dt_method]()
-            else:
-                print(f"Aviso: Método '{self.dt_method}' não reconhecido. Usando 'robust_phases'.")
+        try:
+            if self.dt_method == "robust_phases":
                 return self.compute_adaptive_timestep_robust_phases()
+            else:
+                # Mantém métodos originais para compatibilidade
+                methods = {
+                    "classic": self.compute_adaptive_timestep_classic,
+                    "local": self.compute_adaptive_timestep_local,
+                }
+                
+                if self.dt_method in methods:
+                    dt_computed = methods[self.dt_method]()
+                    return self._validate_dt(dt_computed, f"method_{self.dt_method}")
+                else:
+                    print(f"Aviso: Método '{self.dt_method}' não reconhecido. Usando 'robust_phases'.")
+                    return self.compute_adaptive_timestep_robust_phases()
+                    
+        except Exception as e:
+            print(f"ERRO no compute_adaptive_timestep: {e}")
+            return self._validate_dt(self.dt, "main_error_recovery")
 
     def update_timestep(self):
-        """Atualiza passo de tempo com nova estratégia robusta"""
+        """Atualiza passo de tempo com nova estratégia robusta e proteções"""
         if not self.adaptive_dt:
             return
 
         dt_old = self.dt
 
-        # Calcula novo dt
-        self.dt = self.compute_adaptive_timestep()
+        try:
+            # Calcula novo dt (já protegido internamente)
+            self.dt = self.compute_adaptive_timestep()
 
-        # Atualiza histórico
-        self.last_dt_values.append(self.dt)
-        if len(self.last_dt_values) > 5:
-            self.last_dt_values.pop(0)
+            # Verificação final paranóica
+            self.dt = self._validate_dt(self.dt, "update_final")
 
-        # Verifica transição de fase
-        self.check_phase_transition()
+            # Atualiza histórico
+            self.last_dt_values.append(self.dt)
+            if len(self.last_dt_values) > 5:
+                self.last_dt_values.pop(0)
 
-        if abs(self.dt - dt_old) > 1e-10:
-            print(f"  -> dt ajustado (Fase {self.phase} - {self.phase_params[self.phase]['name']}): {dt_old:.6e} → {self.dt:.6e} s")
-            # Precisa remontar o sistema de saturação com novo dt
-            self.assemble_saturation_system()
+            # Verifica transição de fase
+            self.check_phase_transition()
 
-    # ==================== MÉTODOS ORIGINAIS MANTIDOS ====================
+            if abs(self.dt - dt_old) > 1e-12:
+                print(f"  -> dt ajustado (Fase {self.phase} - {self.phase_params[self.phase]['name']}): {dt_old:.6e} → {self.dt:.6e} s")
+                # Precisa remontar o sistema de saturação com novo dt
+                self.assemble_saturation_system()
+
+        except Exception as e:
+            print(f"ERRO CRÍTICO em update_timestep: {e}")
+            print(f"Mantendo dt anterior: {dt_old:.2e}")
+            self.dt = self._validate_dt(dt_old, "update_error_recovery")
+
+    # ==================== MÉTODOS ORIGINAIS MANTIDOS COM PROTEÇÕES ====================
 
     def compute_adaptive_timestep_classic(self):
-        """Método CFL clássico (original) - mantido para compatibilidade"""
+        """Método CFL clássico com proteções de limite"""
         if not self.adaptive_dt:
-            return self.dt
+            return self._validate_dt(self.dt, "classic_fixed")
 
-        (u_, p_) = self.U.split()
+        try:
+            (u_, p_) = self.U.split()
 
-        # Velocidade máxima no domínio
-        u_array = u_.vector().get_local()
-        u_magnitude = np.sqrt(u_array[::2]**2 + u_array[1::2]**2)
-        u_max = np.max(u_magnitude)
+            # Velocidade máxima no domínio
+            u_array = u_.vector().get_local()
+            u_magnitude = np.sqrt(u_array[::2]**2 + u_array[1::2]**2)
+            u_max = np.max(u_magnitude)
 
-        if u_max < 1e-15:
-            dt_new = self.dt_max
-        else:
-            h_min = self.mesh.hmin()
-            dt_new = self.CFL_max * h_min / u_max
-            dt_new = max(min(dt_new, 1.5 * self.dt), 0.75 * self.dt)
-            dt_new = max(min(dt_new, self.dt_max), self.dt_min)
+            if u_max < 1e-15:
+                dt_new = self.dt_max
+            else:
+                h_min = self.mesh.hmin()
+                dt_new = self.CFL_max * h_min / u_max
+                dt_new = max(min(dt_new, 1.5 * self.dt), 0.75 * self.dt)
 
-        return dt_new
+            return self._validate_dt(dt_new, "classic_computed")
+
+        except Exception as e:
+            print(f"    Erro no método clássico: {e}")
+            return self._validate_dt(self.dt, "classic_error")
 
     def initialize_xdmf_files(self):
         """Inicializa arquivos XDMF para salvar campos"""
@@ -705,7 +785,8 @@ class BrinkmanIMPESSolver:
         uout = float(assemble(dot(u_, n) * ds(3)))
         mass_balance_error = abs(abs(uin) - abs(uout))
 
-        print(f"  Fase {self.phase} ({self.phase_params[self.phase]['name']}) | dt={self.dt:.6e} s | Convergência: {self.consecutive_convergence}")
+        print(f"  Fase {self.phase} ({self.phase_params[self.phase]['name']}) | dt={self.dt:.6e} s [{self.dt_min:.1e}, {self.dt_max:.1e}]")
+        print(f"  Convergência: {self.consecutive_convergence} | Falhas: {self.consecutive_failures}")
         print(f"  Sin={Sin:.4f}, Sout={Sout:.4f}, Sdx={Sdx:.4f}")
         print(f"  Qo={Qo:.6e}, Qw={Qw:.6e}, pin={pin:.2f} Pa")
         print(f"  Balanço de massa: erro={mass_balance_error:.6e}")
@@ -761,46 +842,50 @@ class BrinkmanIMPESSolver:
 
         print(f"  -> Salvando checkpoint: {checkpoint_name}")
 
-        # Salva campos FEniCS
-        hdf = HDF5File(self.mesh.mpi_comm(), str(checkpoint_file), "w")
-        hdf.write(self.U, "velocity_pressure")
-        hdf.write(self.S, "saturation")
-        hdf.write(self.s0, "saturation_old")
-        hdf.close()
+        try:
+            # Salva campos FEniCS
+            hdf = HDF5File(self.mesh.mpi_comm(), str(checkpoint_file), "w")
+            hdf.write(self.U, "velocity_pressure")
+            hdf.write(self.S, "saturation")
+            hdf.write(self.s0, "saturation_old")
+            hdf.close()
 
-        # Salva metadados da simulação (expandido)
-        metadata = {
-            'time': float(self.t),
-            'step': int(self.step),
-            'dt': float(self.dt),
-            'dt_initial': float(self.dt_initial),
-            'adaptive_dt': self.adaptive_dt,
-            'dt_method': self.dt_method,
-            'CFL_max': float(self.CFL_max),
-            'dt_min': float(self.dt_min),
-            'dt_max': float(self.dt_max),
-            'mu_w': float(self.mu_w),
-            'mu_o': float(self.mu_o),
-            'phi': float(self.phi),
-            'k_matrix': float(self.k_matrix),
-            'inlet_velocity': float(self.inlet_velocity),
-            'pin_value': float(self.pin_value),
-            'pout_value': float(self.pout_value),
-            # Novos campos da estratégia robusta
-            'phase': int(self.phase),
-            'consecutive_convergence': int(self.consecutive_convergence),
-            'consecutive_failures': int(self.consecutive_failures),
-            'max_saturation_change': float(self.max_saturation_change)
-        }
+            # Salva metadados da simulação (expandido)
+            metadata = {
+                'time': float(self.t),
+                'step': int(self.step),
+                'dt': float(self.dt),
+                'dt_initial': float(self.dt_initial),
+                'adaptive_dt': self.adaptive_dt,
+                'dt_method': self.dt_method,
+                'CFL_max': float(self.CFL_max),
+                'dt_min': float(self.dt_min),
+                'dt_max': float(self.dt_max),
+                'mu_w': float(self.mu_w),
+                'mu_o': float(self.mu_o),
+                'phi': float(self.phi),
+                'k_matrix': float(self.k_matrix),
+                'inlet_velocity': float(self.inlet_velocity),
+                'pin_value': float(self.pin_value),
+                'pout_value': float(self.pout_value),
+                # Novos campos da estratégia robusta
+                'phase': int(self.phase),
+                'consecutive_convergence': int(self.consecutive_convergence),
+                'consecutive_failures': int(self.consecutive_failures),
+                'max_saturation_change': float(self.max_saturation_change)
+            }
 
-        with open(metadata_file, 'w') as f:
-            json.dump(metadata, f, indent=2)
+            with open(metadata_file, 'w') as f:
+                json.dump(metadata, f, indent=2)
 
-        # Salva histórico de resultados
-        with open(results_file, 'w') as f:
-            json.dump(self.results, f, indent=2)
+            # Salva histórico de resultados
+            with open(results_file, 'w') as f:
+                json.dump(self.results, f, indent=2)
 
-        print(f"     Checkpoint salvo com sucesso!")
+            print(f"     Checkpoint salvo com sucesso!")
+
+        except Exception as e:
+            print(f"     ERRO ao salvar checkpoint: {e}")
 
     def load_checkpoint(self, checkpoint_name: str = "checkpoint"):
         """
@@ -834,7 +919,11 @@ class BrinkmanIMPESSolver:
 
             self.t = metadata['time']
             self.step = metadata['step']
-            self.dt = metadata['dt']
+            
+            # Valida dt antes de usar
+            dt_loaded = metadata['dt']
+            self.dt = self._validate_dt(dt_loaded, "checkpoint_load")
+            
             self.dt_initial = metadata['dt_initial']
 
             # Carrega método de dt se disponível
@@ -855,6 +944,7 @@ class BrinkmanIMPESSolver:
             print(f"  Reiniciando do passo {self.step}, t = {self.t:.4f} s")
             print(f"  Método de dt: {self.dt_method}")
             print(f"  Fase atual: {self.phase} ({self.phase_params[self.phase]['name']})")
+            print(f"  dt carregado: {self.dt:.6e} s [validado]")
 
             return True
 
@@ -866,11 +956,11 @@ class BrinkmanIMPESSolver:
             save_interval: int = 50, max_steps: int = int(1e6),
             restart_from_checkpoint: str = None):
         """
-        Executa simulação com estratégia robusta por fases
+        Executa simulação com estratégia robusta por fases e proteções completas
         """
-        print("\n" + "="*70)
-        print("INICIANDO SIMULAÇÃO BRINKMAN-IMPES COM ESTRATÉGIA ROBUSTA")
-        print("="*70)
+        print("\n" + "="*80)
+        print("INICIANDO SIMULAÇÃO BRINKMAN-IMPES COM ESTRATÉGIA ROBUSTA E PROTEÇÕES")
+        print("="*80)
 
         # Setup inicial
         self.load_mesh()
@@ -905,14 +995,14 @@ class BrinkmanIMPESSolver:
         print(f"Área total: {self.Area:.6e} m²")
         print(f"\nParâmetros da simulação:")
         print(f"  - Tempo final: {T} s")
-        print(f"  - Passo de tempo inicial: {self.dt} s")
+        print(f"  - Passo de tempo inicial: {self.dt:.6e} s")
         print(f"  - Método de dt: {self.dt_method}")
+        print(f"  - PROTEÇÕES DE LIMITE ATIVADAS")
         if self.adaptive_dt:
             print(f"  - ESTRATÉGIA ROBUSTA POR FASES ativada")
             print(f"    * Fase inicial: {self.phase} ({self.phase_params[self.phase]['name']})")
             print(f"    * CFL_max inicial: {self.phase_params[self.phase]['cfl_max']}")
-            print(f"    * dt_min: {self.dt_min:.6e} s")
-            print(f"    * dt_max: {self.dt_max:.6e} s")
+            print(f"    * LIMITES RIGOROSOS: dt ∈ [{self.dt_min:.2e}, {self.dt_max:.2e}] s")
             print(f"    * Max variação saturação: {self.max_saturation_change}")
         else:
             print(f"  - Passo de tempo FIXO")
@@ -921,7 +1011,7 @@ class BrinkmanIMPESSolver:
         print(f"  - Save interval: {save_interval}")
         if self.checkpoint_interval > 0:
             print(f"  - Checkpoint interval: {self.checkpoint_interval} passos")
-        print("\n" + "="*70 + "\n")
+        print("\n" + "="*80 + "\n")
 
         # Loop temporal com estratégia robusta
         while self.step < max_steps and self.t < T:
@@ -955,6 +1045,12 @@ class BrinkmanIMPESSolver:
                 if self.adaptive_dt and self.step > 0:
                     self.update_timestep()
 
+                # Verifica se dt está nos limites (paranoia)
+                if not (self.dt_min <= self.dt <= self.dt_max):
+                    print(f"  AVISO: dt fora dos limites! Corrigindo {self.dt:.2e} → ", end="")
+                    self.dt = self._validate_dt(self.dt, "main_loop_correction")
+                    print(f"{self.dt:.2e}")
+
                 # Avança no tempo
                 self.t += self.dt
                 self.step += 1
@@ -963,7 +1059,7 @@ class BrinkmanIMPESSolver:
                 self.consecutive_convergence += 1
                 if self.consecutive_failures > 0:
                     self.consecutive_failures = 0
-                    print("  Convergência restaurada!")
+                    print("  ✓ Convergência restaurada!")
 
                 # Diagnósticos
                 timestep_data = self.compute_diagnostics()
@@ -992,7 +1088,7 @@ class BrinkmanIMPESSolver:
                 elapsed = time.time() - start
 
                 # Informação sobre o passo de tempo
-                print(f"Passo {self.step} concluído: t = {self.t:.4f}s | dt = {self.dt:.6e}s | tempo: {elapsed:.3f}s")
+                print(f"✓ Passo {self.step} concluído: t = {self.t:.4f}s | dt = {self.dt:.6e}s | tempo: {elapsed:.3f}s")
 
             else:
                 # Falha: gerencia erro
@@ -1001,6 +1097,7 @@ class BrinkmanIMPESSolver:
 
                 # Não avança no tempo, mas incrementa step para controle
                 # Não incrementa self.step para não atrapalhar a contagem
+                print(f"  ↻ Tentando novamente com dt = {self.dt:.6e}s")
 
         # Salva checkpoint final
         if self.checkpoint_interval > 0:
@@ -1010,24 +1107,25 @@ class BrinkmanIMPESSolver:
         self.close_xdmf_files()
         self.writer.write_summary(self.results)
 
-        print("\n" + "="*70)
+        print("\n" + "="*80)
         print("SIMULAÇÃO CONCLUÍDA COM SUCESSO!")
-        print("="*70)
+        print("="*80)
         print(f"Total de passos: {self.step}")
         print(f"Tempo final: {self.t:.2f} s")
         print(f"Fase final: {self.phase} ({self.phase_params[self.phase]['name']})")
         print(f"Método de dt usado: {self.dt_method}")
-        print(f"dt final: {self.dt:.6e} s")
-        print(f"Falhas de convergência: {self.consecutive_failures}")
+        print(f"dt final: {self.dt:.6e} s [validado: ✓]")
+        print(f"Limites respeitados: [{self.dt_min:.2e}, {self.dt_max:.2e}] s")
+        print(f"Falhas de convergência finais: {self.consecutive_failures}")
         print(f"Resultados salvos em: {self.output_dir}")
-        print("="*70 + "\n")
+        print("="*80 + "\n")
 
 # ==================== EXEMPLOS DE USO ====================
 
 if __name__ == "__main__":
 
-    # ========== EXEMPLO COM NOVA ESTRATÉGIA ROBUSTA POR FASES ==========
-    print("\n>>> TESTANDO NOVA ESTRATÉGIA ROBUSTA POR FASES <<<\n")
+    # ========== EXEMPLO COM NOVA ESTRATÉGIA ROBUSTA POR FASES COM PROTEÇÕES ==========
+    print("\n>>> TESTANDO NOVA ESTRATÉGIA ROBUSTA POR FASES COM PROTEÇÕES COMPLETAS <<<\n")
 
     # Executa com a nova estratégia robusta
     methods_to_test = ["robust_phases", "classic", "local"]
@@ -1063,4 +1161,5 @@ if __name__ == "__main__":
     print("  - Maior estabilidade nas fases iniciais")
     print("  - Crescimento controlado do passo de tempo")
     print("  - Recuperação automática de falhas")
+    print("  - GARANTIA ABSOLUTA: dt sempre em [dt_min, dt_max]")
     print("  - Melhor desempenho geral")
