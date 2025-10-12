@@ -1,7 +1,7 @@
 """
 Biblioteca para simulação de fluxo bifásico usando método Brinkman-IMPES
 Versão Melhorada - Com estratégia robusta de passo de tempo adaptativo por fases
-e proteções explícitas de limites de dt
+e CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE
 """
 
 from fenics import *
@@ -78,7 +78,7 @@ class DataWriter:
     def initialize_file(self):
         """Inicializa arquivo de resultados com cabeçalho"""
         headers = ["time", "dt", "Qo", "Qw", "pin", "pout", 
-                   "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures"]
+                   "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures", "saturation_limit"]
 
         with open(self.results_file, 'w') as f:
             f.write(','.join(headers) + '\n')
@@ -88,7 +88,7 @@ class DataWriter:
     def append_timestep(self, data: Dict[str, float]):
         """Adiciona dados de um passo de tempo"""
         keys = ["time", "dt", "Qo", "Qw", "pin", "pout", 
-                "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures"]
+                "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures", "saturation_limit"]
 
         with open(self.results_file, 'a') as f:
             row = ','.join(str(data[key]) for key in keys)
@@ -101,7 +101,7 @@ class DataWriter:
             return
 
         keys = ["time", "dt", "Qo", "Qw", "pin", "pout", 
-                "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures"]
+                "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures", "saturation_limit"]
 
         with open(self.summary_file, 'w') as f:
             f.write(','.join(keys) + '\n')
@@ -121,7 +121,8 @@ class BrinkmanIMPESSolver:
     Solver para simulação de fluxo bifásico óleo-água usando
     método IMPES (Implicit Pressure Explicit Saturation) com
     equação de Brinkman para meios vuggy e estratégia robusta
-    de passo de tempo adaptativo por fases com proteções explícitas
+    de passo de tempo adaptativo por fases com CONTROLE ADAPTATIVO
+    DE SATURAÇÃO POR FASE
     """
 
     def __init__(self, 
@@ -140,9 +141,11 @@ class BrinkmanIMPESSolver:
                  dt_min: float = 1e-6,
                  dt_max: float = 10.0,
                  checkpoint_interval: int = 0,
-                 dt_method: str = "robust_phases"):
+                 dt_method: str = "robust_phases",
+                 saturation_limits: Dict[int, float] = None):
         """
-        Inicializa o solver com estratégia robusta de passo de tempo
+        Inicializa o solver com estratégia robusta de passo de tempo e
+        CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE
 
         Args:
             mesh_dir: Diretório contendo mesh/domains/boundaries
@@ -161,6 +164,8 @@ class BrinkmanIMPESSolver:
             dt_max: Passo de tempo máximo [s]
             checkpoint_interval: Salva checkpoint a cada N passos (0 = desativado)
             dt_method: Método de cálculo de dt ("robust_phases" é o novo método)
+            saturation_limits: Limites de saturação por fase {fase: max_change}
+                              Se None, usa padrão: {1: 0.05, 2: 0.1, 3: 0.15}
         """
         self.mesh_dir = Path(mesh_dir)
         self.output_dir = Path(output_dir)
@@ -209,8 +214,23 @@ class BrinkmanIMPESSolver:
             3: {'cfl_max': 1.0, 'max_steps': float('inf'), 'dt_variation': 1.2, 'name': 'regime'}
         }
 
-        # Thresholds de segurança
-        self.max_saturation_change = 0.1
+        # ========== CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE ==========
+        # NOVO: Limites de saturação específicos para cada fase
+        if saturation_limits is None:
+            self.saturation_control_by_phase = {
+                1: 0.05,  # Fase 1 (início): muito conservativo - 5%
+                2: 0.1,   # Fase 2 (desenvolvimento): padrão - 10%
+                3: 0.15   # Fase 3 (regime): mais relaxado - 15%
+            }
+        else:
+            self.saturation_control_by_phase = saturation_limits.copy()
+
+        # Validação dos limites de saturação
+        for phase, limit in self.saturation_control_by_phase.items():
+            if not (0.01 <= limit <= 1.0):
+                raise ValueError(f"Limite de saturação para fase {phase} ({limit}) deve estar entre 0.01 e 1.0")
+
+        # Threshold de convergência
         self.convergence_threshold = 15
 
         # Componentes FEniCS (inicializados em setup)
@@ -223,7 +243,7 @@ class BrinkmanIMPESSolver:
         # Escritor de dados
         self.writer = DataWriter(self.output_dir / "data")
 
-        # Histórico de resultados (expandido)
+        # Histórico de resultados (expandido com limite de saturação)
         self.results = {
             'time': [],
             'dt': [],
@@ -236,13 +256,27 @@ class BrinkmanIMPESSolver:
             'Sout': [],
             'Sdx': [],
             'phase': [],
-            'convergence_failures': []
+            'convergence_failures': [],
+            'saturation_limit': []  # NOVO: registra limite de saturação usado
         }
 
-        print(f"BrinkmanIMPESSolver inicializado com proteções de limite:")
+        print(f"BrinkmanIMPESSolver inicializado com CONTROLE ADAPTATIVO DE SATURAÇÃO:")
         print(f"  dt_min = {self.dt_min:.2e} s")
         print(f"  dt_max = {self.dt_max:.2e} s") 
         print(f"  dt_inicial = {self.dt:.2e} s")
+        print(f"  Limites de saturação por fase:")
+        for phase, limit in self.saturation_control_by_phase.items():
+            phase_name = self.phase_params[phase]['name']
+            print(f"    Fase {phase} ({phase_name}): {limit*100:.1f}%")
+
+    def get_current_saturation_limit(self) -> float:
+        """
+        Retorna o limite de variação de saturação para a fase atual
+        
+        Returns:
+            Limite máximo de variação de saturação (0-1)
+        """
+        return self.saturation_control_by_phase[self.phase]
 
     def _validate_dt(self, dt_value: float, context: str = "") -> float:
         """
@@ -464,7 +498,7 @@ class BrinkmanIMPESSolver:
             print(f"    Erro na equação de saturação: {e}")
             return False
 
-    # ==================== NOVA ESTRATÉGIA ROBUSTA POR FASES COM PROTEÇÕES ====================
+    # ==================== NOVA ESTRATÉGIA ROBUSTA POR FASES COM CONTROLE ADAPTATIVO DE SATURAÇÃO ====================
 
     def compute_adaptive_timestep_local(self):
         """
@@ -511,10 +545,15 @@ class BrinkmanIMPESSolver:
             return self._validate_dt(min(self.dt, self.dt_max), "local_error")
 
     def compute_saturation_check(self):
-        """Verificação de saturação com proteção de limites"""
+        """
+        Verificação de saturação com CONTROLE ADAPTATIVO POR FASE
+        """
         try:
             if len(self.results['time']) < 1:
                 return self._validate_dt(self.dt_max, "saturation_initial")
+
+            # ⭐ NOVO: Usa limite da fase atual
+            current_limit = self.get_current_saturation_limit()
 
             # Variação máxima de saturação
             s_array = self.S.vector().get_local()
@@ -523,11 +562,14 @@ class BrinkmanIMPESSolver:
             max_change = np.max(np.abs(s_array - s_old_array))
 
             # Se variação é muito grande, limita dt
-            if max_change > self.max_saturation_change:
+            if max_change > current_limit:
                 # Reduz dt proporcionalmente
-                factor = self.max_saturation_change / max_change
+                factor = current_limit / max_change
                 dt_limited = self.dt * factor * 0.8  # margem de segurança
-                return self._validate_dt(dt_limited, "saturation_limited")
+                
+                print(f"    Limite de saturação (Fase {self.phase}): {current_limit*100:.1f}% | Variação atual: {max_change*100:.1f}%")
+                
+                return self._validate_dt(dt_limited, f"saturation_limited_phase_{self.phase}")
 
             return self._validate_dt(self.dt_max, "saturation_ok")
 
@@ -537,7 +579,8 @@ class BrinkmanIMPESSolver:
 
     def compute_adaptive_timestep_robust_phases(self):
         """
-        Nova estratégia robusta com múltiplas proteções de limite
+        Nova estratégia robusta com múltiplas proteções de limite e
+        CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE
         GARANTIA: dt_min ≤ dt_new ≤ dt_max SEMPRE
         """
         if not self.adaptive_dt:
@@ -547,7 +590,7 @@ class BrinkmanIMPESSolver:
             # Critério principal: CFL local (já protegido internamente)
             dt_cfl = self.compute_adaptive_timestep_local()
 
-            # Critério de segurança: variação de saturação (já protegido internamente)
+            # ⭐ NOVO: Critério de segurança com limite adaptativo por fase
             dt_sat_check = self.compute_saturation_check()
 
             # Usa o mais restritivo
@@ -575,21 +618,29 @@ class BrinkmanIMPESSolver:
             return self._validate_dt(min(self.dt, self.dt_max), "robust_error_recovery")
 
     def check_phase_transition(self):
-        """Verifica se deve mudar de fase"""
+        """Verifica se deve mudar de fase com logs de limites de saturação"""
         if self.phase == 1:
             # Fase 1 → 2: após passos bem-sucedidos
             if (self.step >= self.phase_params[1]['max_steps'] and 
                 self.consecutive_convergence >= 10):
+                old_limit = self.get_current_saturation_limit()
                 self.phase = 2
-                print(f"  → Transição para Fase 2 ({self.phase_params[2]['name']}) - CFL_max = {self.phase_params[2]['cfl_max']}")
+                new_limit = self.get_current_saturation_limit()
+                print(f"  → Transição para Fase 2 ({self.phase_params[2]['name']})")
+                print(f"    CFL_max: {self.phase_params[1]['cfl_max']} → {self.phase_params[2]['cfl_max']}")
+                print(f"    Limite saturação: {old_limit*100:.1f}% → {new_limit*100:.1f}%")
 
         elif self.phase == 2:
             # Fase 2 → 3: quando saturação está estabelecida
             if (self.step >= self.phase_params[2]['max_steps'] or
                 (len(self.results['Sin']) >= 10 and
                  np.std(self.results['Sin'][-10:]) < 0.01)):
+                old_limit = self.get_current_saturation_limit()
                 self.phase = 3
-                print(f"  → Transição para Fase 3 ({self.phase_params[3]['name']}) - CFL_max = {self.phase_params[3]['cfl_max']}")
+                new_limit = self.get_current_saturation_limit()
+                print(f"  → Transição para Fase 3 ({self.phase_params[3]['name']})")
+                print(f"    CFL_max: {self.phase_params[2]['cfl_max']} → {self.phase_params[3]['cfl_max']}")
+                print(f"    Limite saturação: {old_limit*100:.1f}% → {new_limit*100:.1f}%")
 
     def handle_convergence_failure(self):
         """Gerencia falhas de convergência com proteções"""
@@ -611,9 +662,13 @@ class BrinkmanIMPESSolver:
         else:
             # Muitas falhas: volta para dt_min e Fase 1
             self.dt = self.dt_min
+            old_phase = self.phase
             self.phase = 1
             self.consecutive_failures = 0
+            old_limit = self.saturation_control_by_phase[old_phase]
+            new_limit = self.get_current_saturation_limit()
             print(f"    Reset para Fase 1. dt = {self.dt:.2e}")
+            print(f"    Limite saturação: {old_limit*100:.1f}% → {new_limit*100:.1f}%")
 
         # Garante que está nos limites (redundante, mas seguro)
         self.dt = self._validate_dt(self.dt, "failure_final")
@@ -669,7 +724,8 @@ class BrinkmanIMPESSolver:
             self.check_phase_transition()
 
             if abs(self.dt - dt_old) > 1e-12:
-                print(f"  -> dt ajustado (Fase {self.phase} - {self.phase_params[self.phase]['name']}): {dt_old:.6e} → {self.dt:.6e} s")
+                current_limit = self.get_current_saturation_limit()
+                print(f"  -> dt ajustado (Fase {self.phase} - {self.phase_params[self.phase]['name']} | Sat: {current_limit*100:.1f}%): {dt_old:.6e} → {self.dt:.6e} s")
                 # Precisa remontar o sistema de saturação com novo dt
                 self.assemble_saturation_system()
 
@@ -746,7 +802,7 @@ class BrinkmanIMPESSolver:
         print(f"  -> Campos salvos em t = {self.t:.4f}s")
 
     def compute_diagnostics(self) -> Dict[str, float]:
-        """Calcula diagnósticos da simulação (expandido)"""
+        """Calcula diagnósticos da simulação (expandido com limite de saturação)"""
         (u_, p_) = self.U.split()
 
         ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
@@ -780,12 +836,15 @@ class BrinkmanIMPESSolver:
         else:
             Vinj = self.results['Vinj'][-1] + Q_total * self.dt
 
+        # Limite de saturação atual
+        saturation_limit = self.get_current_saturation_limit()
+
         # Verifica balanço de massa
         uin = float(assemble(dot(u_, n) * ds(1)))
         uout = float(assemble(dot(u_, n) * ds(3)))
         mass_balance_error = abs(abs(uin) - abs(uout))
 
-        print(f"  Fase {self.phase} ({self.phase_params[self.phase]['name']}) | dt={self.dt:.6e} s [{self.dt_min:.1e}, {self.dt_max:.1e}]")
+        print(f"  Fase {self.phase} ({self.phase_params[self.phase]['name']}) | Sat.Limit: {saturation_limit*100:.1f}% | dt={self.dt:.6e} s")
         print(f"  Convergência: {self.consecutive_convergence} | Falhas: {self.consecutive_failures}")
         print(f"  Sin={Sin:.4f}, Sout={Sout:.4f}, Sdx={Sdx:.4f}")
         print(f"  Qo={Qo:.6e}, Qw={Qw:.6e}, pin={pin:.2f} Pa")
@@ -803,7 +862,8 @@ class BrinkmanIMPESSolver:
             'Sout': Sout,
             'Sdx': Sdx,
             'phase': self.phase,
-            'convergence_failures': self.consecutive_failures
+            'convergence_failures': self.consecutive_failures,
+            'saturation_limit': saturation_limit  # NOVO
         }
 
     def check_convergence(self) -> bool:
@@ -829,7 +889,7 @@ class BrinkmanIMPESSolver:
 
     def save_checkpoint(self, checkpoint_name: str = "checkpoint"):
         """
-        Salva estado completo da simulação para restart (expandido)
+        Salva estado completo da simulação para restart (expandido com controle de saturação)
         """
         import json
 
@@ -850,7 +910,7 @@ class BrinkmanIMPESSolver:
             hdf.write(self.s0, "saturation_old")
             hdf.close()
 
-            # Salva metadados da simulação (expandido)
+            # Salva metadados da simulação (expandido com controle de saturação)
             metadata = {
                 'time': float(self.t),
                 'step': int(self.step),
@@ -868,11 +928,12 @@ class BrinkmanIMPESSolver:
                 'inlet_velocity': float(self.inlet_velocity),
                 'pin_value': float(self.pin_value),
                 'pout_value': float(self.pout_value),
-                # Novos campos da estratégia robusta
+                # Campos da estratégia robusta
                 'phase': int(self.phase),
                 'consecutive_convergence': int(self.consecutive_convergence),
                 'consecutive_failures': int(self.consecutive_failures),
-                'max_saturation_change': float(self.max_saturation_change)
+                # NOVO: Controle de saturação por fase
+                'saturation_control_by_phase': self.saturation_control_by_phase
             }
 
             with open(metadata_file, 'w') as f:
@@ -889,7 +950,7 @@ class BrinkmanIMPESSolver:
 
     def load_checkpoint(self, checkpoint_name: str = "checkpoint"):
         """
-        Carrega estado da simulação de um checkpoint (expandido)
+        Carrega estado da simulação de um checkpoint (expandido com controle de saturação)
         """
         import json
 
@@ -930,11 +991,20 @@ class BrinkmanIMPESSolver:
             if 'dt_method' in metadata:
                 self.dt_method = metadata['dt_method']
 
-            # Carrega novos campos da estratégia robusta
+            # Carrega campos da estratégia robusta
             if 'phase' in metadata:
                 self.phase = metadata['phase']
                 self.consecutive_convergence = metadata.get('consecutive_convergence', 0)
                 self.consecutive_failures = metadata.get('consecutive_failures', 0)
+
+            # NOVO: Carrega controle de saturação por fase se disponível
+            if 'saturation_control_by_phase' in metadata:
+                # Converte chaves string para int (JSON não suporta chaves int)
+                sat_control = metadata['saturation_control_by_phase']
+                if isinstance(list(sat_control.keys())[0], str):
+                    self.saturation_control_by_phase = {int(k): v for k, v in sat_control.items()}
+                else:
+                    self.saturation_control_by_phase = sat_control
 
             # Carrega histórico de resultados
             with open(results_file, 'r') as f:
@@ -944,6 +1014,7 @@ class BrinkmanIMPESSolver:
             print(f"  Reiniciando do passo {self.step}, t = {self.t:.4f} s")
             print(f"  Método de dt: {self.dt_method}")
             print(f"  Fase atual: {self.phase} ({self.phase_params[self.phase]['name']})")
+            print(f"  Limite saturação atual: {self.get_current_saturation_limit()*100:.1f}%")
             print(f"  dt carregado: {self.dt:.6e} s [validado]")
 
             return True
@@ -956,11 +1027,11 @@ class BrinkmanIMPESSolver:
             save_interval: int = 50, max_steps: int = int(1e6),
             restart_from_checkpoint: str = None):
         """
-        Executa simulação com estratégia robusta por fases e proteções completas
+        Executa simulação com estratégia robusta por fases e CONTROLE ADAPTATIVO DE SATURAÇÃO
         """
-        print("\n" + "="*80)
-        print("INICIANDO SIMULAÇÃO BRINKMAN-IMPES COM ESTRATÉGIA ROBUSTA E PROTEÇÕES")
-        print("="*80)
+        print("\n" + "="*90)
+        print("INICIANDO SIMULAÇÃO BRINKMAN-IMPES COM CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE")
+        print("="*90)
 
         # Setup inicial
         self.load_mesh()
@@ -997,13 +1068,15 @@ class BrinkmanIMPESSolver:
         print(f"  - Tempo final: {T} s")
         print(f"  - Passo de tempo inicial: {self.dt:.6e} s")
         print(f"  - Método de dt: {self.dt_method}")
-        print(f"  - PROTEÇÕES DE LIMITE ATIVADAS")
+        print(f"  - CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE ATIVADO:")
+        for phase, limit in self.saturation_control_by_phase.items():
+            phase_name = self.phase_params[phase]['name']
+            print(f"    * Fase {phase} ({phase_name}): max Δs = {limit*100:.1f}%")
         if self.adaptive_dt:
             print(f"  - ESTRATÉGIA ROBUSTA POR FASES ativada")
             print(f"    * Fase inicial: {self.phase} ({self.phase_params[self.phase]['name']})")
             print(f"    * CFL_max inicial: {self.phase_params[self.phase]['cfl_max']}")
             print(f"    * LIMITES RIGOROSOS: dt ∈ [{self.dt_min:.2e}, {self.dt_max:.2e}] s")
-            print(f"    * Max variação saturação: {self.max_saturation_change}")
         else:
             print(f"  - Passo de tempo FIXO")
         print(f"  - Velocidade de entrada: {self.inlet_velocity} m/s")
@@ -1011,9 +1084,9 @@ class BrinkmanIMPESSolver:
         print(f"  - Save interval: {save_interval}")
         if self.checkpoint_interval > 0:
             print(f"  - Checkpoint interval: {self.checkpoint_interval} passos")
-        print("\n" + "="*80 + "\n")
+        print("\n" + "="*90 + "\n")
 
-        # Loop temporal com estratégia robusta
+        # Loop temporal com estratégia robusta e controle de saturação
         while self.step < max_steps and self.t < T:
             start = time.time()
 
@@ -1088,7 +1161,8 @@ class BrinkmanIMPESSolver:
                 elapsed = time.time() - start
 
                 # Informação sobre o passo de tempo
-                print(f"✓ Passo {self.step} concluído: t = {self.t:.4f}s | dt = {self.dt:.6e}s | tempo: {elapsed:.3f}s")
+                current_limit = self.get_current_saturation_limit()
+                print(f"✓ Passo {self.step} concluído: t = {self.t:.4f}s | dt = {self.dt:.6e}s | Sat.Limit = {current_limit*100:.1f}% | tempo: {elapsed:.3f}s")
 
             else:
                 # Falha: gerencia erro
@@ -1107,59 +1181,101 @@ class BrinkmanIMPESSolver:
         self.close_xdmf_files()
         self.writer.write_summary(self.results)
 
-        print("\n" + "="*80)
+        print("\n" + "="*90)
         print("SIMULAÇÃO CONCLUÍDA COM SUCESSO!")
-        print("="*80)
+        print("="*90)
         print(f"Total de passos: {self.step}")
         print(f"Tempo final: {self.t:.2f} s")
         print(f"Fase final: {self.phase} ({self.phase_params[self.phase]['name']})")
+        print(f"Limite saturação final: {self.get_current_saturation_limit()*100:.1f}%")
         print(f"Método de dt usado: {self.dt_method}")
         print(f"dt final: {self.dt:.6e} s [validado: ✓]")
         print(f"Limites respeitados: [{self.dt_min:.2e}, {self.dt_max:.2e}] s")
         print(f"Falhas de convergência finais: {self.consecutive_failures}")
         print(f"Resultados salvos em: {self.output_dir}")
-        print("="*80 + "\n")
+        print("="*90 + "\n")
 
 # ==================== EXEMPLOS DE USO ====================
 
 if __name__ == "__main__":
 
-    # ========== EXEMPLO COM NOVA ESTRATÉGIA ROBUSTA POR FASES COM PROTEÇÕES ==========
-    print("\n>>> TESTANDO NOVA ESTRATÉGIA ROBUSTA POR FASES COM PROTEÇÕES COMPLETAS <<<\n")
+    # ========== EXEMPLO COM CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE ==========
+    print("\n>>> TESTANDO CONTROLE ADAPTATIVO DE SATURAÇÃO POR FASE <<<\n")
 
-    # Executa com a nova estratégia robusta
-    methods_to_test = ["robust_phases", "classic", "local"]
+    # Configurações de saturação para testar
+    saturation_configs = [
+        # Configuração padrão
+        None,  # Usa padrão: {1: 0.05, 2: 0.1, 3: 0.15}
+        
+        # Configuração conservativa
+        {1: 0.03, 2: 0.07, 3: 0.12},
+        
+        # Configuração agressiva
+        {1: 0.08, 2: 0.15, 3: 0.25}
+    ]
 
-    for method in methods_to_test:
-        print(f"\n--- Testando método: {method} ---")
+    config_names = ["padrao", "conservativo", "agressivo"]
+
+    for i, sat_config in enumerate(saturation_configs):
+        config_name = config_names[i]
+        print(f"\n--- Testando configuração: {config_name} ---")
 
         solver_test = BrinkmanIMPESSolver(
             mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
-            output_dir=f"/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results_{method}",
+            output_dir=f"/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results_adaptive_sat_{config_name}",
             mu_w=1e-3,
             mu_o=1e-3,
             perm_darcy=100,
             dt=0.1,
             adaptive_dt=True,
-            CFL_max=0.5,  # CFL inicial para Fase 1
-            dt_min=1e-8,  # dt_min mais conservativo
+            CFL_max=0.5,
+            dt_min=1e-8,
             dt_max=2000.0,
-            dt_method=method,
-            checkpoint_interval=100  # Salva checkpoint a cada 100 passos
+            dt_method="robust_phases",
+            checkpoint_interval=100,
+            saturation_limits=sat_config  # NOVO PARÂMETRO
         )
 
         solver_test.run(T=1e5, impes_steps=256, save_interval=20)
 
-        print(f"--- Método {method} finalizado ---\n")
+        print(f"--- Configuração {config_name} finalizada ---\n")
 
-    print("\n*** TODAS AS SIMULAÇÕES CONCLUÍDAS ***")
+    # ========== TESTE COM CONFIGURAÇÃO CUSTOMIZADA AVANÇADA ==========
+    print("\n--- Teste Configuração Avançada ---")
+    
+    # Configuração muito específica
+    custom_sat_limits = {
+        1: 0.02,   # Fase 1: ultra conservativo (2%)
+        2: 0.08,   # Fase 2: moderado (8%) 
+        3: 0.20    # Fase 3: relaxado (20%)
+    }
+
+    solver_custom = BrinkmanIMPESSolver(
+        mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
+        output_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results_custom_saturation",
+        mu_w=1e-3,
+        mu_o=1e-3,
+        perm_darcy=100,
+        dt=0.05,  # dt inicial menor
+        adaptive_dt=True,
+        CFL_max=0.3,  # CFL mais conservativo
+        dt_min=1e-9,  # dt_min menor
+        dt_max=1000.0,  # dt_max menor
+        dt_method="robust_phases",
+        checkpoint_interval=50,
+        saturation_limits=custom_sat_limits
+    )
+
+    solver_custom.run(T=5e4, impes_steps=128, save_interval=10)
+
+    print("\n*** TODOS OS TESTES DE CONTROLE ADAPTATIVO CONCLUÍDOS ***")
     print("Compare os resultados nos diretórios:")
-    print("  - results_robust_phases/ (NOVO - Recomendado)")
-    print("  - results_classic/")
-    print("  - results_local/")
-    print("\nA estratégia 'robust_phases' deve apresentar:")
-    print("  - Maior estabilidade nas fases iniciais")
-    print("  - Crescimento controlado do passo de tempo")
-    print("  - Recuperação automática de falhas")
-    print("  - GARANTIA ABSOLUTA: dt sempre em [dt_min, dt_max]")
-    print("  - Melhor desempenho geral")
+    print("  - results_adaptive_sat_padrao/ (Limites padrão)")
+    print("  - results_adaptive_sat_conservativo/ (Mais estável)")
+    print("  - results_adaptive_sat_agressivo/ (Mais rápido)")
+    print("  - results_custom_saturation/ (Configuração customizada)")
+    print("\nAnálise esperada:")
+    print("  - Conservativo: mais passos, mais estável, dt menores")
+    print("  - Agressivo: menos passos, possíveis instabilidades, dt maiores")
+    print("  - Padrão: equilíbrio entre estabilidade e performance")
+    print("  - Custom: comportamento ultra-conservativo no início")
