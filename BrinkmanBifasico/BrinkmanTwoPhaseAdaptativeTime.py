@@ -1,301 +1,518 @@
-import numpy as np
-from fenics import *
-import matplotlib.pyplot as plt
-from scipy.sparse import csr_matrix
-from scipy.sparse.linalg import spsolve
-import time as time_module
+"""
+Biblioteca para simulação de fluxo bifásico usando método Brinkman-IMPES
+Versão Melhorada - Com estratégia robusta de passo de tempo adaptativo por fases
+"""
 
-class BrinkmanTwoPhaseAdaptiveTime:
-    def __init__(self, mesh, fluid_properties, boundary_conditions, 
-                 initial_conditions, numerical_params):
-        
-        # Malha e espaços funcionais
-        self.mesh = mesh
-        self.dim = mesh.topology().dim()
-        
-        # Espaço misto para velocidade e pressão (P2-P1 ou P1-P0)
-        V_elem = VectorElement("CG", mesh.ufl_cell(), 2)
-        P_elem = FiniteElement("CG", mesh.ufl_cell(), 1)
-        self.W = FunctionSpace(mesh, V_elem * P_elem)
-        
-        # Espaço DG para saturação
-        self.V_s = FunctionSpace(mesh, "DG", 1)
-        
-        # Funções
-        self.U = Function(self.W)  # Velocidade e pressão atual
-        self.U_old = Function(self.W)  # Velocidade e pressão anterior
-        self.s = Function(self.V_s)  # Saturação atual
-        self.s_old = Function(self.V_s)  # Saturação anterior
-        
-        # Funções teste
-        (self.v, self.q) = TestFunctions(self.W)
-        self.phi = TestFunction(self.V_s)
-        
-        # Propriedades dos fluidos
-        self.rho_w = Constant(fluid_properties.get('rho_w', 1000.0))  # densidade água
-        self.rho_o = Constant(fluid_properties.get('rho_o', 800.0))   # densidade óleo
-        self.mu_w = Constant(fluid_properties.get('mu_w', 1e-3))      # viscosidade água
-        self.mu_o = Constant(fluid_properties.get('mu_o', 5e-3))      # viscosidade óleo
-        self.porosity = Constant(fluid_properties.get('phi', 0.3))    # porosidade
-        self.permeability = Constant(fluid_properties.get('k', 1e-12)) # permeabilidade
-        
+from fenics import *
+import time
+import ufl_legacy as ufl
+from pathlib import Path
+from typing import Dict, Tuple, Optional
+import numpy as np
+
+# ==================== CONSTANTES ====================
+
+class PhysicalConstants:
+    """Constantes físicas utilizadas nas simulações"""
+    MILLIDARCY_TO_M2 = 9.86923e-16
+    KGF_CM2_TO_PA = 98066.5
+
+# ==================== EXPRESSÕES CUSTOMIZADAS ====================
+
+class PiecewiseConstant(UserExpression):
+    """Expressão constante por partes baseada em marcadores de células"""
+
+    def __init__(self, values: Dict[int, float], markers, **kwargs):
+        self._values = values
+        self._markers = markers
+        super().__init__(**kwargs)
+
+    def eval_cell(self, values, x, cell):
+        values[0] = self._values[self._markers[cell.index]]
+
+    def value_shape(self):
+        return tuple()
+
+# ==================== FUNÇÕES AUXILIARES ====================
+
+class FlowEquations:
+    """Equações constitutivas para fluxo bifásico"""
+
+    @staticmethod
+    def tensor_jump(v, n):
+        """Salto do tensor através de interfaces"""
+        return ufl.outer(v, n)("+") + ufl.outer(v, n)("-")
+
+    @staticmethod
+    def lambda_inv(s, mu_w: float, mu_o: float, no: float, nw: float):
+        """Inverso da mobilidade total"""
+        return 1.0 / ((s**nw) / mu_w + ((1.0 - s)**no) / mu_o)
+
+    @staticmethod
+    def fractional_flow(s, mu_rel: float, no, nw):
+        """Função de fluxo fracionário (Buckley-Leverett)"""
+        return s**nw / (s**nw + mu_rel * (1.0 - s)**no)
+
+    @staticmethod
+    def fractional_flow_vugg(s):
+        """Fluxo fracionário em vuggy (cavidades)"""
+        return s
+
+    @staticmethod
+    def mu_brinkman(s, mu_o: float, mu_w: float):
+        """Viscosidade efetiva pelo modelo de Brinkman"""
+        return s * mu_w + (1.0 - s) * mu_o
+
+# ==================== I/O ====================
+
+class DataWriter:
+    """Gerenciamento de escrita de dados de simulação"""
+
+    def __init__(self, output_dir: Path):
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.results_file = self.output_dir / "results.txt"
+        self.summary_file = self.output_dir / "results_summary.txt"
+
+    def initialize_file(self):
+        """Inicializa arquivo de resultados com cabeçalho"""
+        headers = ["time", "dt", "Qo", "Qw", "pin", "pout", 
+                   "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures"]
+
+        with open(self.results_file, 'w') as f:
+            f.write(','.join(headers) + '\n')
+
+        print(f"Arquivo inicializado: {self.results_file}")
+
+    def append_timestep(self, data: Dict[str, float]):
+        """Adiciona dados de um passo de tempo"""
+        keys = ["time", "dt", "Qo", "Qw", "pin", "pout", 
+                "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures"]
+
+        with open(self.results_file, 'a') as f:
+            row = ','.join(str(data[key]) for key in keys)
+            f.write(row + '\n')
+
+    def write_summary(self, data_arrays: Dict[str, list]):
+        """Escreve resumo completo da simulação"""
+        if not data_arrays or len(data_arrays.get('time', [])) == 0:
+            print("Aviso: Nenhum dado para gravar no summary")
+            return
+
+        keys = ["time", "dt", "Qo", "Qw", "pin", "pout", 
+                "Vinj", "Sin", "Sout", "Sdx", "phase", "convergence_failures"]
+
+        with open(self.summary_file, 'w') as f:
+            f.write(','.join(keys) + '\n')
+
+            n_steps = len(data_arrays['time'])
+            for i in range(n_steps):
+                row = ','.join(str(data_arrays[key][i]) for key in keys)
+                f.write(row + '\n')
+
+        print(f"Summary gravado em: {self.summary_file}")
+        print(f"Total de {n_steps} passos de tempo salvos")
+
+# ==================== SOLVER PRINCIPAL ====================
+
+class BrinkmanIMPESSolver:
+    """
+    Solver para simulação de fluxo bifásico óleo-água usando
+    método IMPES (Implicit Pressure Explicit Saturation) com
+    equação de Brinkman para meios vuggy e estratégia robusta
+    de passo de tempo adaptativo por fases
+    """
+
+    def __init__(self, 
+                 mesh_dir: str,
+                 output_dir: str,
+                 mu_w: float = 1e-3,
+                 mu_o: float = 1e-3,
+                 perm_darcy: float = 1.0,
+                 dt: float = 0.1,
+                 phi: float = 0.2,
+                 inlet_velocity: float = 1.0e-6,
+                 pin: float = None,
+                 pout: float = None,
+                 adaptive_dt: bool = False,
+                 CFL_max: float = 0.5,
+                 dt_min: float = 1e-6,
+                 dt_max: float = 10.0,
+                 checkpoint_interval: int = 0,
+                 dt_method: str = "robust_phases"):
+        """
+        Inicializa o solver com estratégia robusta de passo de tempo
+
+        Args:
+            mesh_dir: Diretório contendo mesh/domains/boundaries
+            output_dir: Diretório para saída de resultados
+            mu_w: Viscosidade da água [Pa.s]
+            mu_o: Viscosidade do óleo [Pa.s]
+            perm_darcy: Permeabilidade em Darcy
+            dt: Passo de tempo inicial [s]
+            phi: Porosidade [-]
+            inlet_velocity: Velocidade na entrada [m/s] (componente x)
+            pin: Pressão de entrada [Pa] (se None, usa 2*KGF_CM2_TO_PA)
+            pout: Pressão de saída [Pa] (se None, usa KGF_CM2_TO_PA)
+            adaptive_dt: Se True, usa passo de tempo adaptativo
+            CFL_max: Número de CFL máximo para dt adaptativo (usado na Fase 1)
+            dt_min: Passo de tempo mínimo [s]
+            dt_max: Passo de tempo máximo [s]
+            checkpoint_interval: Salva checkpoint a cada N passos (0 = desativado)
+            dt_method: Método de cálculo de dt ("robust_phases" é o novo método)
+        """
+        self.mesh_dir = Path(mesh_dir)
+        self.output_dir = Path(output_dir)
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Propriedades físicas
+        self.mu_w = mu_w
+        self.mu_o = mu_o
+        self.mu_rel = mu_w / mu_o
+        self.phi = phi
+        self.k_matrix = perm_darcy * PhysicalConstants.MILLIDARCY_TO_M2
+
         # Condições de contorno
-        self.bcs_flow = boundary_conditions.get('flow', [])
-        self.bcs_saturation = boundary_conditions.get('saturation', [])
-        
-        # Condições iniciais
-        self.s.interpolate(initial_conditions.get('saturation', Constant(0.0)))
-        self.s_old.assign(self.s)
-        
+        self.inlet_velocity = inlet_velocity
+        self.pin_value = pin if pin is not None else 2 * PhysicalConstants.KGF_CM2_TO_PA
+        self.pout_value = pout if pout is not None else PhysicalConstants.KGF_CM2_TO_PA
+
         # Parâmetros numéricos
-        self.dt = numerical_params.get('dt', 1e-4)
-        self.dt_min = numerical_params.get('dt_min', 1e-8)
-        self.dt_max = numerical_params.get('dt_max', 1e-2)
-        self.adaptive_dt = numerical_params.get('adaptive_dt', True)
-        
-        # Parâmetros da nova estratégia adaptativa
-        self.phase = 1  # Fase atual (1: início, 2: desenvolvimento, 3: regime)
+        self.dt = dt
+        self.dt_initial = dt
+        self.adaptive_dt = adaptive_dt
+        self.CFL_max = CFL_max
+        self.dt_min = dt_min
+        self.dt_max = dt_max
+        self.dt_method = dt_method
+        self.checkpoint_interval = checkpoint_interval
+        self.t = 0.0
         self.step = 0
+
+        # ========== NOVA ESTRATÉGIA ROBUSTA POR FASES ==========
+        
+        # Controle de fases
+        self.phase = 1  # Fase atual (1: início, 2: desenvolvimento, 3: regime)
         self.consecutive_convergence = 0
         self.consecutive_failures = 0
         self.last_dt_values = []  # Histórico dos últimos dt
-        
+
         # Parâmetros por fase
         self.phase_params = {
-            1: {'cfl_max': 0.5, 'max_steps': 20, 'dt_variation': 1.1},
-            2: {'cfl_max': 0.8, 'max_steps': 100, 'dt_variation': 1.2},
-            3: {'cfl_max': 1.0, 'max_steps': float('inf'), 'dt_variation': 1.2}
+            1: {'cfl_max': 0.5, 'max_steps': 20, 'dt_variation': 1.1, 'name': 'início'},
+            2: {'cfl_max': 0.8, 'max_steps': 100, 'dt_variation': 1.2, 'name': 'desenvolvimento'},
+            3: {'cfl_max': 1.0, 'max_steps': float('inf'), 'dt_variation': 1.2, 'name': 'regime'}
         }
-        
-        # Thresholds
+
+        # Thresholds de segurança
         self.max_saturation_change = 0.1
-        self.convergence_threshold = 15  # máximo de iterações não-lineares
-        
-        # Armazenamento de resultados
+        self.convergence_threshold = 15
+
+        # Componentes FEniCS (inicializados em setup)
+        self.mesh = None
+        self.W = None
+        self.R = None
+        self.U = None
+        self.S = None
+
+        # Escritor de dados
+        self.writer = DataWriter(self.output_dir / "data")
+
+        # Histórico de resultados (expandido)
         self.results = {
             'time': [],
             'dt': [],
-            'saturation_max': [],
-            'saturation_mean': [],
-            'velocity_max': [],
+            'Qo': [],
+            'Qw': [],
+            'pin': [],
+            'pout': [],
+            'Vinj': [],
+            'Sin': [],
+            'Sout': [],
+            'Sdx': [],
             'phase': [],
-            'convergence_info': []
+            'convergence_failures': []
         }
-        
-        # Solver não-linear
-        self.newton_solver = NewtonSolver()
-        self.newton_solver.parameters['absolute_tolerance'] = 1e-8
-        self.newton_solver.parameters['relative_tolerance'] = 1e-7
-        self.newton_solver.parameters['maximum_iterations'] = 25
-        self.newton_solver.parameters['relaxation_parameter'] = 1.0
-        
-        print("BrinkmanTwoPhaseAdaptiveTime inicializado com estratégia robusta")
-        print(f"  dt inicial: {self.dt:.2e}")
-        print(f"  Fase inicial: {self.phase} (CFL_max = {self.phase_params[self.phase]['cfl_max']})")
 
-    def relative_permeability(self, s):
-        """Permeabilidades relativas usando modelo de Corey"""
-        # Parâmetros típicos
-        s_wr = 0.2  # saturação residual de água
-        s_or = 0.2  # saturação residual de óleo
-        
-        # Saturação normalizada
-        s_n = (s - s_wr) / (1 - s_wr - s_or)
-        s_n = max_value(min_value(s_n, 1.0), 0.0)
-        
-        # Permeabilidades relativas (Corey)
-        kr_w = s_n**2
-        kr_o = (1 - s_n)**2
-        
-        return kr_w, kr_o
+    def load_mesh(self):
+        """Carrega mesh e marcadores"""
+        print("Carregando mesh...")
+        self.mesh = Mesh()
+        with XDMFFile(str(self.mesh_dir / "mesh.xdmf")) as infile:
+            infile.read(self.mesh)
 
-    def effective_properties(self, s):
-        """Propriedades efetivas baseadas na saturação"""
-        kr_w, kr_o = self.relative_permeability(s)
-        
-        # Mobilidades
-        lambda_w = kr_w / self.mu_w
-        lambda_o = kr_o / self.mu_o
-        lambda_t = lambda_w + lambda_o
-        
-        # Densidade efetiva
-        rho_eff = s * self.rho_w + (1 - s) * self.rho_o
-        
-        return lambda_t, rho_eff, lambda_w, lambda_o
+        mvc = MeshValueCollection("size_t", self.mesh, 2)
+        with XDMFFile(str(self.mesh_dir / "domains.xdmf")) as infile:
+            infile.read(mvc)
+        self.markers = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
 
-    def momentum_equation(self):
-        """Equação de momentum com lei de Darcy-Brinkman"""
-        (u, p) = split(self.U)
-        (u_old, p_old) = split(self.U_old)
-        
-        # Propriedades efetivas na saturação atual
-        lambda_t, rho_eff, lambda_w, lambda_o = self.effective_properties(self.s)
-        
-        # Permeabilidade efetiva
-        K_eff = self.permeability * lambda_t
-        
-        # Equação de Darcy-Brinkman
-        F_momentum = (
-            # Termo de permeabilidade
-            inner(u, self.v) / K_eff * dx
-            
-            # Gradiente de pressão
-            + inner(grad(p), self.v) * dx
-            
-            # Termo gravitacional
-            - rho_eff * inner(Constant((0, -9.81)), self.v) * dx
-            
-            # Continuidade
-            + div(u) * self.q * dx
-        )
-        
-        return F_momentum
+        mvc = MeshValueCollection("size_t", self.mesh, 1)
+        with XDMFFile(str(self.mesh_dir / "boundaries.xdmf")) as infile:
+            infile.read(mvc)
+        self.boundaries = cpp.mesh.MeshFunctionSizet(self.mesh, mvc)
+        print("Mesh carregada com sucesso")
 
-    def transport_equation(self):
-        """Equação de transporte para saturação usando DG"""
-        (u, p) = split(self.U)
-        
-        # Fluxo fracionário
-        kr_w, kr_o = self.relative_permeability(self.s)
-        lambda_w = kr_w / self.mu_w
-        lambda_o = kr_o / self.mu_o
-        lambda_t = lambda_w + lambda_o
-        
-        f_w = lambda_w / (lambda_t + 1e-12)  # Evita divisão por zero
-        
-        # Velocidade total (Darcy)
-        velocity = u
-        
-        # Forma variacional DG para transporte
+    def setup_function_spaces(self, order: int = 1):
+        """Define espaços de funções"""
+        print("Configurando espaços de funções...")
+        V = FiniteElement("BDM", self.mesh.ufl_cell(), order)
+        Q = FiniteElement("DG", self.mesh.ufl_cell(), order - 1)
+
+        self.W = FunctionSpace(self.mesh, V * Q)
+        self.R = FunctionSpace(self.mesh, "DG", order - 1)
+
+        self.U = Function(self.W)
+        self.S = Function(self.R)
+        self.s0 = Function(self.R)
+        self.s0.vector()[:] = 0.0
+        print("Espaços de funções configurados")
+
+    def setup_boundary_conditions(self):
+        """Define condições de contorno"""
+        print("Configurando condições de contorno...")
+        print(f"  - Velocidade de entrada: {self.inlet_velocity} m/s")
+        print(f"  - Pressão de entrada: {self.pin_value:.2f} Pa ({self.pin_value/PhysicalConstants.KGF_CM2_TO_PA:.2f} kgf/cm²)")
+        print(f"  - Pressão de saída: {self.pout_value:.2f} Pa ({self.pout_value/PhysicalConstants.KGF_CM2_TO_PA:.2f} kgf/cm²)")
+
+        self.pin_bc = self.pin_value
+        self.pout_bc = self.pout_value
+
+        # BC1: Velocidade prescrita na entrada (boundary 1)
+        bc1 = DirichletBC(self.W.sub(0), 
+                         Constant((self.inlet_velocity, 0.0)), 
+                         self.boundaries, 1)
+
+        # BC2 e BC4: Paredes sem deslizamento (boundaries 2 e 4)
+        bc2 = DirichletBC(self.W.sub(0), Constant((0.0, 0.0)), 
+                         self.boundaries, 2)
+        bc4 = DirichletBC(self.W.sub(0), Constant((0.0, 0.0)), 
+                         self.boundaries, 4)
+
+        self.bcs = [bc1, bc2, bc4]
+        print("Condições de contorno configuradas")
+
+    def setup_material_properties(self):
+        """Define propriedades materiais variáveis espacialmente"""
+        print("Configurando propriedades materiais...")
+        # Expoentes de Corey
+        # marker 0 = meio poroso (outer), marker 1 = vuggy (inner)
+        self.no = {1: 1, 0: 2}
+        self.nw = {1: 1, 0: 2}
+
+        VVV = FunctionSpace(self.mesh, "DG", 0)
+
+        noo = PiecewiseConstant(self.no, self.markers)
+        self.noo_proj = project(noo, VVV)
+
+        nww = PiecewiseConstant(self.nw, self.markers)
+        self.nww_proj = project(nww, VVV)
+        print("Propriedades materiais configuradas")
+
+    def assemble_pressure_system(self):
+        """Monta sistema para equação de pressão"""
+        print("Montando sistema de pressão...")
+        (u, p) = TrialFunctions(self.W)
+        (v, q) = TestFunctions(self.W)
+
+        dx = Measure("dx", domain=self.mesh, subdomain_data=self.markers)
+        ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
         n = FacetNormal(self.mesh)
-        h = CellDiameter(self.mesh)
-        
-        # Termo temporal
-        F_transport = (
-            (self.s - self.s_old) / self.dt * self.phi * dx
-        )
-        
-        # Termo convectivo (upwind)
-        F_transport += (
-            - f_w * inner(velocity, grad(self.phi)) * dx
-            + f_w('+') * max_value(inner(velocity('+'), n('+')), 0) * jump(self.phi) * dS
-            + f_w('-') * max_value(inner(velocity('-'), n('-')), 0) * jump(self.phi) * dS
-        )
-        
+
         # Estabilização DG
-        alpha = 0.1  # parâmetro de estabilização
-        F_transport += alpha * avg(h) * jump(grad(f_w)) * jump(grad(self.phi)) * dS
-        
-        return F_transport
+        h = CellDiameter(self.mesh)
+        h2 = ufl.Min(h("+"), h("-"))
+        alpha = 35
 
-    def solve_flow_step(self):
-        """Resolve a equação de flow (velocidade e pressão)"""
-        F = self.momentum_equation()
-        
-        # Resolve sistema não-linear
-        solve(F == 0, self.U, self.bcs_flow,
-              solver_parameters={'newton_solver': {
-                  'absolute_tolerance': 1e-8,
-                  'relative_tolerance': 1e-7,
-                  'maximum_iterations': 15
-              }})
-        
-        return True
+        stab = (
+            self.mu_w * (alpha / h2) * 
+            inner(FlowEquations.tensor_jump(u, n), 
+                  FlowEquations.tensor_jump(v, n)) * dS
+            - self.mu_w * inner(avg(grad(u)), 
+                                FlowEquations.tensor_jump(v, n)) * dS
+            - self.mu_w * inner(avg(grad(v)), 
+                                FlowEquations.tensor_jump(u, n)) * dS
+        )
 
-    def solve_transport_step(self):
-        """Resolve a equação de transporte (saturação)"""
-        F_transport = self.transport_equation()
-        
+        Kinv = Constant(1 / self.k_matrix)
+        f = Constant((0.0, 0.0))
+
+        self.a_pressure = (
+            FlowEquations.mu_brinkman(self.s0, self.mu_o, self.mu_w) * 
+            inner(grad(u), grad(v)) * dx(1)
+            + inner(v, FlowEquations.lambda_inv(self.s0, self.mu_w, self.mu_o,
+                                                 self.no[0], self.nw[0]) * 
+                   Kinv * u) * dx(0)
+            - div(v) * p * dx
+            + div(u) * q * dx
+            + stab
+        )
+
+        self.L_pressure = (
+            inner(f, v) * dx
+            - self.pout_bc * dot(v, n) * ds(3)
+        )
+        print("Sistema de pressão montado")
+
+    def assemble_saturation_system(self):
+        """Monta sistema para equação de saturação"""
+        print("Montando sistema de saturação...")
+        s = TrialFunction(self.R)
+        r = TestFunction(self.R)
+
+        (u_, p_) = self.U.split()
+
+        dx = Measure("dx", domain=self.mesh, subdomain_data=self.markers)
+        ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
+        n = FacetNormal(self.mesh)
+
+        dt_const = Constant(self.dt)
+        sbar = Constant(1.0)  # Saturação de injeção
+
+        # Fluxos upwind
+        un = 0.5 * (inner(u_, n) + abs(inner(u_, n)))
+        un_h = 0.5 * (inner(u_, n) - abs(inner(u_, n)))
+
+        # Estabilização DG
+        stabilisation = (
+            dt_const("+") * inner(
+                jump(r), 
+                jump(un * FlowEquations.fractional_flow(
+                    self.s0, self.mu_rel, self.noo_proj, self.nww_proj))
+            ) * dS
+        )
+
+        # Forma completa da equação de saturação
+        L3 = (
+            self.phi * r * (s - self.s0) * dx(0)
+            + r * (s - self.s0) * dx(1)
+            - dt_const * inner(
+                grad(r), 
+                FlowEquations.fractional_flow(
+                    self.s0, self.mu_rel, self.noo_proj, self.nww_proj) * u_
+            ) * dx(0)
+            - dt_const * inner(
+                grad(r), 
+                FlowEquations.fractional_flow_vugg(self.s0) * u_
+            ) * dx(1)
+            + dt_const * r * FlowEquations.fractional_flow(
+                self.s0, self.mu_rel, self.no[0], self.nw[0]
+            ) * un * ds
+            + stabilisation
+            + dt_const * r * un_h * sbar * ds(1)
+        )
+
+        self.a_saturation, self.L_saturation = lhs(L3), rhs(L3)
+        print("Sistema de saturação montado")
+
+    def solve_pressure(self):
+        """Resolve equação de pressão com tratamento de erro"""
         try:
-            # Solver linear para equação de transporte
-            solve(F_transport == 0, self.s, self.bcs_saturation)
-            
-            # Limita saturação entre 0 e 1
-            s_array = self.s.vector().get_local()
-            s_array = np.clip(s_array, 0.0, 1.0)
-            self.s.vector().set_local(s_array)
-            self.s.vector().apply('insert')
-            
+            solve(self.a_pressure == self.L_pressure, self.U, self.bcs)
             return True
-            
         except Exception as e:
-            print(f"    Erro na equação de transporte: {e}")
+            print(f"    Erro na equação de pressão: {e}")
             return False
 
+    def solve_saturation(self):
+        """Resolve equação de saturação (explícita) com tratamento de erro"""
+        try:
+            solve(self.a_saturation == self.L_saturation, self.S)
+            
+            # Limita saturação entre 0 e 1
+            s_array = self.S.vector().get_local()
+            s_array = np.clip(s_array, 0.0, 1.0)
+            self.S.vector().set_local(s_array)
+            self.S.vector().apply('insert')
+            
+            self.s0.assign(self.S)
+            return True
+        except Exception as e:
+            print(f"    Erro na equação de saturação: {e}")
+            return False
+
+    # ==================== NOVA ESTRATÉGIA ROBUSTA POR FASES ====================
+
     def compute_adaptive_timestep_local(self):
-        """Método CFL local - critério principal da nova estratégia"""
+        """
+        Método CFL local - critério principal da nova estratégia robusta
+        """
+        if not self.adaptive_dt:
+            return self.dt
+
         (u_, p_) = self.U.split()
-        
+
         # Projeta velocidade para DG0
         DG0 = FunctionSpace(self.mesh, "DG", 0)
         u_magnitude = project(sqrt(inner(u_, u_)), DG0)
         h_cell = project(CellDiameter(self.mesh), DG0)
-        
+
         u_array = u_magnitude.vector().get_local()
         h_array = h_cell.vector().get_local()
-        
+
         # Evita divisão por zero
         h_array = np.where(h_array > 1e-12, h_array, 1e-12)
-        
+
         # CFL local
         cfl_array = u_array / h_array
         cfl_array = cfl_array[cfl_array > 1e-12]
-        
+
         if len(cfl_array) == 0:
             return self.dt_max
-        
+
         # Usa percentil 95 para robustez
         cfl_max = np.percentile(cfl_array, 95)
-        
+
         if cfl_max < 1e-12:
             return self.dt_max
-        
+
         # CFL_max baseado na fase atual
         cfl_target = self.phase_params[self.phase]['cfl_max']
         dt_new = cfl_target / cfl_max
-        
+
         return dt_new
 
     def compute_saturation_check(self):
         """Verifica se a variação de saturação está controlada"""
         if len(self.results['time']) < 1:
             return self.dt_max
-        
+
         # Variação máxima de saturação
-        s_array = self.s.vector().get_local()
-        s_old_array = self.s_old.vector().get_local()
-        
+        s_array = self.S.vector().get_local()
+        s_old_array = self.s0.vector().get_local()
+
         max_change = np.max(np.abs(s_array - s_old_array))
-        
+
         # Se variação é muito grande, limita dt
         if max_change > self.max_saturation_change:
             # Reduz dt proporcionalmente
             factor = self.max_saturation_change / max_change
             return self.dt * factor * 0.8  # margem de segurança
-        
+
         return self.dt_max  # Não limita
 
-    def compute_adaptive_timestep(self):
-        """Nova estratégia robusta de passo de tempo adaptativo"""
+    def compute_adaptive_timestep_robust_phases(self):
+        """
+        Nova estratégia robusta de passo de tempo adaptativo por fases
+        """
         if not self.adaptive_dt:
             return self.dt
-        
+
         # Critério principal: CFL local
         dt_cfl = self.compute_adaptive_timestep_local()
-        
+
         # Critério de segurança: variação de saturação
         dt_sat_check = self.compute_saturation_check()
-        
+
         # Usa o mais restritivo
         dt_new = min(dt_cfl, dt_sat_check)
-        
+
         # Aplicar limitação de variação baseada na fase
         max_variation = self.phase_params[self.phase]['dt_variation']
         dt_new = max(min(dt_new, max_variation * self.dt), self.dt / max_variation)
-        
+
         # Limites globais
         dt_new = max(min(dt_new, self.dt_max), self.dt_min)
-        
+
         return dt_new
 
     def check_phase_transition(self):
@@ -305,307 +522,545 @@ class BrinkmanTwoPhaseAdaptiveTime:
             if (self.step >= self.phase_params[1]['max_steps'] and 
                 self.consecutive_convergence >= 10):
                 self.phase = 2
-                print(f"  → Transição para Fase 2 (desenvolvimento) - CFL_max = {self.phase_params[2]['cfl_max']}")
-                
+                print(f"  → Transição para Fase 2 ({self.phase_params[2]['name']}) - CFL_max = {self.phase_params[2]['cfl_max']}")
+
         elif self.phase == 2:
             # Fase 2 → 3: quando saturação está estabelecida
             if (self.step >= self.phase_params[2]['max_steps'] or
-                (len(self.results['saturation_mean']) >= 10 and
-                 np.std(self.results['saturation_mean'][-10:]) < 0.01)):
+                (len(self.results['Sin']) >= 10 and
+                 np.std(self.results['Sin'][-10:]) < 0.01)):
                 self.phase = 3
-                print(f"  → Transição para Fase 3 (regime) - CFL_max = {self.phase_params[3]['cfl_max']}")
+                print(f"  → Transição para Fase 3 ({self.phase_params[3]['name']}) - CFL_max = {self.phase_params[3]['cfl_max']}")
 
     def handle_convergence_failure(self):
         """Gerencia falhas de convergência"""
         self.consecutive_failures += 1
         self.consecutive_convergence = 0
-        
+
         if self.consecutive_failures == 1:
             # Primeira falha: reduz dt moderadamente
             self.dt *= 0.7
             print(f"    Falha de convergência. Reduzindo dt para {self.dt:.2e}")
-            
+
         elif self.consecutive_failures <= 3:
             # Falhas múltiplas: redução mais agressiva
             self.dt *= 0.5
             print(f"    Falha {self.consecutive_failures}. dt = {self.dt:.2e}")
-            
+
         else:
             # Muitas falhas: volta para dt_min e Fase 1
             self.dt = self.dt_min
             self.phase = 1
             self.consecutive_failures = 0
             print(f"    Reset para Fase 1. dt = {self.dt:.2e}")
-        
+
         # Garante que não fica abaixo do mínimo
         self.dt = max(self.dt, self.dt_min)
 
+        # Remonta sistema de saturação com novo dt
+        self.assemble_saturation_system()
+
+    def compute_adaptive_timestep(self):
+        """
+        Método principal que chama o método selecionado
+        """
+        if self.dt_method == "robust_phases":
+            return self.compute_adaptive_timestep_robust_phases()
+        else:
+            # Mantém métodos originais para compatibilidade
+            methods = {
+                "classic": self.compute_adaptive_timestep_classic,
+                "local": self.compute_adaptive_timestep_local,
+            }
+            
+            if self.dt_method in methods:
+                return methods[self.dt_method]()
+            else:
+                print(f"Aviso: Método '{self.dt_method}' não reconhecido. Usando 'robust_phases'.")
+                return self.compute_adaptive_timestep_robust_phases()
+
     def update_timestep(self):
-        """Atualiza passo de tempo com nova estratégia"""
+        """Atualiza passo de tempo com nova estratégia robusta"""
         if not self.adaptive_dt:
             return
-        
+
+        dt_old = self.dt
+
         # Calcula novo dt
-        dt_new = self.compute_adaptive_timestep()
-        
+        self.dt = self.compute_adaptive_timestep()
+
         # Atualiza histórico
-        self.last_dt_values.append(dt_new)
+        self.last_dt_values.append(self.dt)
         if len(self.last_dt_values) > 5:
             self.last_dt_values.pop(0)
-        
-        # Atualiza dt
-        self.dt = dt_new
-        
+
         # Verifica transição de fase
         self.check_phase_transition()
-        
-        print(f"  Fase {self.phase}, dt = {self.dt:.2e} (CFL_max = {self.phase_params[self.phase]['cfl_max']})")
 
-    def save_results(self, t):
-        """Salva resultados da simulação"""
-        # Calcula estatísticas
-        s_array = self.s.vector().get_local()
+        if abs(self.dt - dt_old) > 1e-10:
+            print(f"  -> dt ajustado (Fase {self.phase} - {self.phase_params[self.phase]['name']}): {dt_old:.6e} → {self.dt:.6e} s")
+            # Precisa remontar o sistema de saturação com novo dt
+            self.assemble_saturation_system()
+
+    # ==================== MÉTODOS ORIGINAIS MANTIDOS ====================
+
+    def compute_adaptive_timestep_classic(self):
+        """Método CFL clássico (original) - mantido para compatibilidade"""
+        if not self.adaptive_dt:
+            return self.dt
+
         (u_, p_) = self.U.split()
-        
-        # Projeta velocidade para calcular magnitude
-        DG0 = FunctionSpace(self.mesh, "DG", 0)
-        u_mag = project(sqrt(inner(u_, u_)), DG0)
-        u_array = u_mag.vector().get_local()
-        
-        # Armazena resultados
-        self.results['time'].append(t)
-        self.results['dt'].append(self.dt)
-        self.results['saturation_max'].append(np.max(s_array))
-        self.results['saturation_mean'].append(np.mean(s_array))
-        self.results['velocity_max'].append(np.max(u_array))
-        self.results['phase'].append(self.phase)
-        self.results['convergence_info'].append({
-            'consecutive_convergence': self.consecutive_convergence,
-            'consecutive_failures': self.consecutive_failures
-        })
 
-    def run(self, T, impes_steps=10, save_interval=10):
-        """Executa simulação IMPES com nova estratégia adaptativa"""
-        print(f"\nIniciando simulação IMPES com estratégia robusta")
-        print(f"Tempo final: {T}, IMPES steps: {impes_steps}")
-        
-        t = 0.0
-        
-        # Salva condição inicial
-        self.save_results(t)
-        
-        # Resolve campo inicial de velocidade
-        print(f"Resolvendo campo inicial de velocidade...")
-        self.solve_flow_step()
-        
-        start_time = time_module.time()
-        
-        while t < T:
-            self.step += 1
-            
-            print(f"\n=== Passo {self.step}, t = {t:.4e} ===")
-            
-            # Atualiza passo de tempo
-            self.update_timestep()
-            
-            # Verificar se dt não ficou muito pequeno
-            if self.dt < self.dt_min * 1.1:
-                print(f"  Aviso: dt próximo do mínimo ({self.dt:.2e})")
-            
+        # Velocidade máxima no domínio
+        u_array = u_.vector().get_local()
+        u_magnitude = np.sqrt(u_array[::2]**2 + u_array[1::2]**2)
+        u_max = np.max(u_magnitude)
+
+        if u_max < 1e-15:
+            dt_new = self.dt_max
+        else:
+            h_min = self.mesh.hmin()
+            dt_new = self.CFL_max * h_min / u_max
+            dt_new = max(min(dt_new, 1.5 * self.dt), 0.75 * self.dt)
+            dt_new = max(min(dt_new, self.dt_max), self.dt_min)
+
+        return dt_new
+
+    def initialize_xdmf_files(self):
+        """Inicializa arquivos XDMF para salvar campos"""
+        viz_dir = self.output_dir / "visualization"
+        viz_dir.mkdir(parents=True, exist_ok=True)
+
+        self.u_file = XDMFFile(str(viz_dir / "velocity.xdmf"))
+        self.p_file = XDMFFile(str(viz_dir / "pressure.xdmf"))
+        self.s_file = XDMFFile(str(viz_dir / "saturation.xdmf"))
+
+        self.u_file.parameters["flush_output"] = True
+        self.p_file.parameters["flush_output"] = True
+        self.s_file.parameters["flush_output"] = True
+
+        self.u_file.parameters["rewrite_function_mesh"] = False
+        self.p_file.parameters["rewrite_function_mesh"] = False
+        self.s_file.parameters["rewrite_function_mesh"] = False
+
+        print("Arquivos XDMF inicializados")
+
+    def close_xdmf_files(self):
+        """Fecha arquivos XDMF"""
+        self.u_file.close()
+        self.p_file.close()
+        self.s_file.close()
+
+    def save_fields(self):
+        """Salva campos para visualização"""
+        (u_, p_) = self.U.split(deepcopy=True)
+
+        u_.rename("velocity", "velocity")
+        p_.rename("pressure", "pressure")
+        self.S.rename("saturation", "saturation")
+
+        self.u_file.write(u_, self.t)
+        self.p_file.write(p_, self.t)
+        self.s_file.write(self.S, self.t)
+
+        print(f"  -> Campos salvos em t = {self.t:.4f}s")
+
+    def compute_diagnostics(self) -> Dict[str, float]:
+        """Calcula diagnósticos da simulação (expandido)"""
+        (u_, p_) = self.U.split()
+
+        ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
+        dx = Measure("dx", domain=self.mesh, subdomain_data=self.markers)
+        n = FacetNormal(self.mesh)
+
+        # Saturações médias
+        Sin = float(assemble(self.S * ds(1))) / self.A_in
+        Sout = float(assemble(self.S * ds(3))) / self.A_in
+        Sdx = float(assemble(self.S * dx)) / self.Area
+
+        # Vazões
+        Q_total = -float(assemble(dot(u_, n) * ds(1)))
+
+        # Vazão de água na saída
+        Qw = float(assemble(
+            FlowEquations.fractional_flow(
+                self.s0, self.mu_rel, self.noo_proj, self.nww_proj
+            ) * dot(u_, n) * ds(3)
+        ))
+
+        # Vazão de óleo
+        Qo = Q_total - Qw
+
+        # Pressão média na entrada
+        pin = float(assemble(p_ * ds(1))) / self.A_in
+
+        # Volume acumulado injetado
+        if len(self.results['Vinj']) == 0:
+            Vinj = Q_total * self.dt
+        else:
+            Vinj = self.results['Vinj'][-1] + Q_total * self.dt
+
+        # Verifica balanço de massa
+        uin = float(assemble(dot(u_, n) * ds(1)))
+        uout = float(assemble(dot(u_, n) * ds(3)))
+        mass_balance_error = abs(abs(uin) - abs(uout))
+
+        print(f"  Fase {self.phase} ({self.phase_params[self.phase]['name']}) | dt={self.dt:.6e} s | Convergência: {self.consecutive_convergence}")
+        print(f"  Sin={Sin:.4f}, Sout={Sout:.4f}, Sdx={Sdx:.4f}")
+        print(f"  Qo={Qo:.6e}, Qw={Qw:.6e}, pin={pin:.2f} Pa")
+        print(f"  Balanço de massa: erro={mass_balance_error:.6e}")
+
+        return {
+            'time': self.t,
+            'dt': self.dt,
+            'Qo': Qo,
+            'Qw': Qw,
+            'pin': pin,
+            'pout': self.pout_bc,
+            'Vinj': Vinj,
+            'Sin': Sin,
+            'Sout': Sout,
+            'Sdx': Sdx,
+            'phase': self.phase,
+            'convergence_failures': self.consecutive_failures
+        }
+
+    def check_convergence(self) -> bool:
+        """Verifica critérios de parada"""
+        if len(self.results['Sout']) < 2:
+            return False
+
+        Sout = self.results['Sout'][-1]
+
+        # Critério: se saturação de saída > 0.3 e razão óleo/água < 0.05
+        if Sout > 0.3:
+            Qo = self.results['Qo'][-1]
+            Qw = self.results['Qw'][-1]
+
+            if Qw > 1e-12:  # Evita divisão por zero
+                ratio = Qo / Qw
+                print(f"  Razão Qo/Qw = {ratio:.6f}")
+
+                if ratio < 0.05:
+                    return True
+
+        return False
+
+    def save_checkpoint(self, checkpoint_name: str = "checkpoint"):
+        """
+        Salva estado completo da simulação para restart (expandido)
+        """
+        import json
+
+        checkpoint_dir = self.output_dir / "checkpoints"
+        checkpoint_dir.mkdir(parents=True, exist_ok=True)
+
+        checkpoint_file = checkpoint_dir / f"{checkpoint_name}.h5"
+        metadata_file = checkpoint_dir / f"{checkpoint_name}_metadata.json"
+        results_file = checkpoint_dir / f"{checkpoint_name}_results.json"
+
+        print(f"  -> Salvando checkpoint: {checkpoint_name}")
+
+        # Salva campos FEniCS
+        hdf = HDF5File(self.mesh.mpi_comm(), str(checkpoint_file), "w")
+        hdf.write(self.U, "velocity_pressure")
+        hdf.write(self.S, "saturation")
+        hdf.write(self.s0, "saturation_old")
+        hdf.close()
+
+        # Salva metadados da simulação (expandido)
+        metadata = {
+            'time': float(self.t),
+            'step': int(self.step),
+            'dt': float(self.dt),
+            'dt_initial': float(self.dt_initial),
+            'adaptive_dt': self.adaptive_dt,
+            'dt_method': self.dt_method,
+            'CFL_max': float(self.CFL_max),
+            'dt_min': float(self.dt_min),
+            'dt_max': float(self.dt_max),
+            'mu_w': float(self.mu_w),
+            'mu_o': float(self.mu_o),
+            'phi': float(self.phi),
+            'k_matrix': float(self.k_matrix),
+            'inlet_velocity': float(self.inlet_velocity),
+            'pin_value': float(self.pin_value),
+            'pout_value': float(self.pout_value),
+            # Novos campos da estratégia robusta
+            'phase': int(self.phase),
+            'consecutive_convergence': int(self.consecutive_convergence),
+            'consecutive_failures': int(self.consecutive_failures),
+            'max_saturation_change': float(self.max_saturation_change)
+        }
+
+        with open(metadata_file, 'w') as f:
+            json.dump(metadata, f, indent=2)
+
+        # Salva histórico de resultados
+        with open(results_file, 'w') as f:
+            json.dump(self.results, f, indent=2)
+
+        print(f"     Checkpoint salvo com sucesso!")
+
+    def load_checkpoint(self, checkpoint_name: str = "checkpoint"):
+        """
+        Carrega estado da simulação de um checkpoint (expandido)
+        """
+        import json
+
+        checkpoint_dir = self.output_dir / "checkpoints"
+        checkpoint_file = checkpoint_dir / f"{checkpoint_name}.h5"
+        metadata_file = checkpoint_dir / f"{checkpoint_name}_metadata.json"
+        results_file = checkpoint_dir / f"{checkpoint_name}_results.json"
+
+        # Verifica se arquivos existem
+        if not checkpoint_file.exists():
+            print(f"Checkpoint não encontrado: {checkpoint_file}")
+            return False
+
+        print(f"Carregando checkpoint: {checkpoint_name}")
+
+        try:
+            # Carrega campos FEniCS
+            hdf = HDF5File(self.mesh.mpi_comm(), str(checkpoint_file), "r")
+            hdf.read(self.U, "velocity_pressure")
+            hdf.read(self.S, "saturation")
+            hdf.read(self.s0, "saturation_old")
+            hdf.close()
+
+            # Carrega metadados
+            with open(metadata_file, 'r') as f:
+                metadata = json.load(f)
+
+            self.t = metadata['time']
+            self.step = metadata['step']
+            self.dt = metadata['dt']
+            self.dt_initial = metadata['dt_initial']
+
+            # Carrega método de dt se disponível
+            if 'dt_method' in metadata:
+                self.dt_method = metadata['dt_method']
+
+            # Carrega novos campos da estratégia robusta
+            if 'phase' in metadata:
+                self.phase = metadata['phase']
+                self.consecutive_convergence = metadata.get('consecutive_convergence', 0)
+                self.consecutive_failures = metadata.get('consecutive_failures', 0)
+
+            # Carrega histórico de resultados
+            with open(results_file, 'r') as f:
+                self.results = json.load(f)
+
+            print(f"  Checkpoint carregado com sucesso!")
+            print(f"  Reiniciando do passo {self.step}, t = {self.t:.4f} s")
+            print(f"  Método de dt: {self.dt_method}")
+            print(f"  Fase atual: {self.phase} ({self.phase_params[self.phase]['name']})")
+
+            return True
+
+        except Exception as e:
+            print(f"Erro ao carregar checkpoint: {e}")
+            return False
+
+    def run(self, T: float, impes_steps: int = 1, 
+            save_interval: int = 50, max_steps: int = int(1e6),
+            restart_from_checkpoint: str = None):
+        """
+        Executa simulação com estratégia robusta por fases
+        """
+        print("\n" + "="*70)
+        print("INICIANDO SIMULAÇÃO BRINKMAN-IMPES COM ESTRATÉGIA ROBUSTA")
+        print("="*70)
+
+        # Setup inicial
+        self.load_mesh()
+        self.setup_function_spaces()
+        self.setup_boundary_conditions()
+        self.setup_material_properties()
+        self.assemble_pressure_system()
+        self.assemble_saturation_system()
+
+        # Tenta carregar checkpoint se especificado
+        if restart_from_checkpoint is not None:
+            if self.load_checkpoint(restart_from_checkpoint):
+                print("\n*** REINICIANDO DE CHECKPOINT ***\n")
+            else:
+                print("\n*** CHECKPOINT NÃO ENCONTRADO - INICIANDO NOVA SIMULAÇÃO ***\n")
+
+        # Inicializa arquivos apenas se for nova simulação
+        if restart_from_checkpoint is None or self.step == 0:
+            self.writer.initialize_file()
+            self.initialize_xdmf_files()
+        else:
+            # Reabre arquivos XDMF para append
+            self.initialize_xdmf_files()
+
+        # Calcula áreas
+        ds = Measure("ds", domain=self.mesh, subdomain_data=self.boundaries)
+        dx = Measure("dx", domain=self.mesh, subdomain_data=self.markers)
+        self.A_in = float(assemble(Constant(1.0) * ds(1)))
+        self.Area = float(assemble(Constant(1.0) * dx))
+
+        print(f"\nÁrea de entrada: {self.A_in:.6e} m²")
+        print(f"Área total: {self.Area:.6e} m²")
+        print(f"\nParâmetros da simulação:")
+        print(f"  - Tempo final: {T} s")
+        print(f"  - Passo de tempo inicial: {self.dt} s")
+        print(f"  - Método de dt: {self.dt_method}")
+        if self.adaptive_dt:
+            print(f"  - ESTRATÉGIA ROBUSTA POR FASES ativada")
+            print(f"    * Fase inicial: {self.phase} ({self.phase_params[self.phase]['name']})")
+            print(f"    * CFL_max inicial: {self.phase_params[self.phase]['cfl_max']}")
+            print(f"    * dt_min: {self.dt_min:.6e} s")
+            print(f"    * dt_max: {self.dt_max:.6e} s")
+            print(f"    * Max variação saturação: {self.max_saturation_change}")
+        else:
+            print(f"  - Passo de tempo FIXO")
+        print(f"  - Velocidade de entrada: {self.inlet_velocity} m/s")
+        print(f"  - IMPES steps: {impes_steps}")
+        print(f"  - Save interval: {save_interval}")
+        if self.checkpoint_interval > 0:
+            print(f"  - Checkpoint interval: {self.checkpoint_interval} passos")
+        print("\n" + "="*70 + "\n")
+
+        # Loop temporal com estratégia robusta
+        while self.step < max_steps and self.t < T:
+            start = time.time()
+
+            print(f"\n=== Passo {self.step + 1}, t = {self.t:.4e} ===")
+
             step_success = True
-            
-            # IMPES: resolve velocidade uma vez a cada impes_steps
-            if self.step % impes_steps == 1:
+
+            # Resolve pressão (IMPES) - no primeiro passo e periodicamente
+            if self.step == 0 or (self.step % impes_steps == 0 and self.step > 0):
                 print("  Resolvendo campo de velocidade...")
-                try:
-                    flow_success = self.solve_flow_step()
-                    if flow_success:
-                        self.consecutive_convergence += 1
-                        self.consecutive_failures = 0
-                    else:
-                        step_success = False
-                except Exception as e:
-                    print(f"    Erro no campo de velocidade: {e}")
+                pressure_success = self.solve_pressure()
+                if not pressure_success:
                     step_success = False
-            
-            # Resolve transporte
+                    print("  ✗ Falha na equação de pressão")
+                elif self.step > 0:
+                    print(f"  [Pressão atualizada no passo {self.step + 1}]")
+
+            # Resolve saturação
             if step_success:
                 print("  Resolvendo transporte...")
-                try:
-                    transport_success = self.solve_transport_step()
-                    if not transport_success:
-                        step_success = False
-                except Exception as e:
-                    print(f"    Erro no transporte: {e}")
+                saturation_success = self.solve_saturation()
+                if not saturation_success:
                     step_success = False
-            
+                    print("  ✗ Falha na equação de saturação")
+
             # Verifica sucesso do passo
             if step_success:
-                # Sucesso: avança no tempo
-                t += self.dt
-                
-                # Atualiza soluções
-                self.U_old.assign(self.U)
-                self.s_old.assign(self.s)
-                
-                # Salva resultados
-                if self.step % save_interval == 0:
-                    self.save_results(t)
-                    print(f"  Resultados salvos (s_max = {self.results['saturation_max'][-1]:.4f})")
-                
-                # Reset contador de falhas
+                # Sucesso: atualiza passo de tempo se adaptativo
+                if self.adaptive_dt and self.step > 0:
+                    self.update_timestep()
+
+                # Avança no tempo
+                self.t += self.dt
+                self.step += 1
+
+                # Registra convergência bem-sucedida
+                self.consecutive_convergence += 1
                 if self.consecutive_failures > 0:
                     self.consecutive_failures = 0
                     print("  Convergência restaurada!")
-                
+
+                # Diagnósticos
+                timestep_data = self.compute_diagnostics()
+
+                # Salva dados
+                self.writer.append_timestep(timestep_data)
+                for key, value in timestep_data.items():
+                    self.results[key].append(value)
+
+                # Salva campos
+                if self.step % save_interval == 0:
+                    self.save_fields()
+
+                # Salva checkpoint periodicamente
+                if self.checkpoint_interval > 0 and self.step % self.checkpoint_interval == 0 and self.step > 0:
+                    self.save_checkpoint(f"checkpoint_step_{self.step}")
+
+                # Verifica convergência
+                if self.check_convergence():
+                    print(f"\n*** Convergência atingida no passo {self.step} ***\n")
+                    # Salva checkpoint final antes de sair
+                    if self.checkpoint_interval > 0:
+                        self.save_checkpoint("checkpoint_final")
+                    break
+
+                elapsed = time.time() - start
+
+                # Informação sobre o passo de tempo
+                print(f"Passo {self.step} concluído: t = {self.t:.4f}s | dt = {self.dt:.6e}s | tempo: {elapsed:.3f}s")
+
             else:
                 # Falha: gerencia erro
-                print("  ✗ Passo falhou")
+                print("  ✗ Passo falhou - aplicando estratégia de recuperação")
                 self.handle_convergence_failure()
-                
-                # Não avança no tempo, tenta novamente
-                continue
-            
-            # Informações de progresso
-            if self.step % 50 == 0:
-                elapsed = time_module.time() - start_time
-                progress = t / T * 100
-                print(f"\n  Progresso: {progress:.1f}% ({t:.2e}/{T:.2e})")
-                print(f"  Tempo decorrido: {elapsed:.1f}s")
-                print(f"  Saturação média: {np.mean(self.s.vector().get_local()):.4f}")
-        
-        # Salva resultado final
-        self.save_results(t)
-        
-        total_time = time_module.time() - start_time
-        print(f"\n=== Simulação Concluída ===")
-        print(f"Tempo total: {total_time:.1f}s")
-        print(f"Passos realizados: {self.step}")
-        print(f"Fase final: {self.phase}")
-        print(f"dt final: {self.dt:.2e}")
 
-    def plot_results(self):
-        """Plotar resultados da simulação"""
-        if len(self.results['time']) < 2:
-            print("Dados insuficientes para plotar")
-            return
-        
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8))
-        
-        # Evolução do passo de tempo
-        axes[0,0].semilogy(self.results['time'], self.results['dt'])
-        axes[0,0].set_xlabel('Tempo')
-        axes[0,0].set_ylabel('Passo de tempo (dt)')
-        axes[0,0].set_title('Evolução do Passo de Tempo')
-        axes[0,0].grid(True)
-        
-        # Fases da simulação
-        phases = np.array(self.results['phase'])
-        for phase in [1, 2, 3]:
-            mask = phases == phase
-            if np.any(mask):
-                times = np.array(self.results['time'])[mask]
-                dts = np.array(self.results['dt'])[mask]
-                axes[0,0].semilogy(times, dts, 'o', markersize=3, 
-                                 label=f'Fase {phase}')
-        axes[0,0].legend()
-        
-        # Saturação máxima
-        axes[0,1].plot(self.results['time'], self.results['saturation_max'])
-        axes[0,1].set_xlabel('Tempo')
-        axes[0,1].set_ylabel('Saturação Máxima')
-        axes[0,1].set_title('Evolução da Saturação Máxima')
-        axes[0,1].grid(True)
-        
-        # Saturação média
-        axes[1,0].plot(self.results['time'], self.results['saturation_mean'])
-        axes[1,0].set_xlabel('Tempo')
-        axes[1,0].set_ylabel('Saturação Média')
-        axes[1,0].set_title('Evolução da Saturação Média')
-        axes[1,0].grid(True)
-        
-        # Velocidade máxima
-        axes[1,1].semilogy(self.results['time'], self.results['velocity_max'])
-        axes[1,1].set_xlabel('Tempo')
-        axes[1,1].set_ylabel('Velocidade Máxima')
-        axes[1,1].set_title('Evolução da Velocidade Máxima')
-        axes[1,1].grid(True)
-        
-        plt.tight_layout()
-        plt.show()
+                # Não avança no tempo, mas incrementa step para controle
+                # Não incrementa self.step para não atrapalhar a contagem
 
-# ==================== EXEMPLO DE USO ====================
+        # Salva checkpoint final
+        if self.checkpoint_interval > 0:
+            self.save_checkpoint("checkpoint_final")
+
+        # Finaliza
+        self.close_xdmf_files()
+        self.writer.write_summary(self.results)
+
+        print("\n" + "="*70)
+        print("SIMULAÇÃO CONCLUÍDA COM SUCESSO!")
+        print("="*70)
+        print(f"Total de passos: {self.step}")
+        print(f"Tempo final: {self.t:.2f} s")
+        print(f"Fase final: {self.phase} ({self.phase_params[self.phase]['name']})")
+        print(f"Método de dt usado: {self.dt_method}")
+        print(f"dt final: {self.dt:.6e} s")
+        print(f"Falhas de convergência: {self.consecutive_failures}")
+        print(f"Resultados salvos em: {self.output_dir}")
+        print("="*70 + "\n")
+
+# ==================== EXEMPLOS DE USO ====================
 
 if __name__ == "__main__":
-    # Criar malha
-    from mshr import Rectangle, generate_mesh
-    domain = Rectangle(Point(0, 0), Point(1, 1))
-    mesh = generate_mesh(domain, 50)
-    
-    # Propriedades dos fluidos
-    fluid_props = {
-        'rho_w': 1000.0,    # kg/m³
-        'rho_o': 800.0,     # kg/m³ 
-        'mu_w': 1e-3,       # Pa·s
-        'mu_o': 5e-3,       # Pa·s
-        'phi': 0.3,         # porosidade
-        'k': 1e-12          # permeabilidade (m²)
-    }
-    
-    # Condições de contorno para velocidade/pressão
-    def inlet_velocity(x, on_boundary):
-        return on_boundary and near(x[0], 0.0)
-    
-    def outlet_pressure(x, on_boundary):
-        return on_boundary and near(x[0], 1.0)
-    
-    V_elem = VectorElement("CG", mesh.ufl_cell(), 2)
-    P_elem = FiniteElement("CG", mesh.ufl_cell(), 1)
-    W = FunctionSpace(mesh, V_elem * P_elem)
-    
-    # Velocidade na entrada
-    inlet_vel = Expression(("0.01", "0.0"), degree=2)
-    bc_inlet = DirichletBC(W.sub(0), inlet_vel, inlet_velocity)
-    
-    # Pressão na saída
-    bc_outlet = DirichletBC(W.sub(1), Constant(0.0), outlet_pressure)
-    
-    boundary_conditions = {
-        'flow': [bc_inlet, bc_outlet],
-        'saturation': []
-    }
-    
-    # Condições iniciais
-    class InitialSaturation(UserExpression):
-        def eval(self, values, x):
-            if x[0] < 0.1:  # Região de injeção
-                values[0] = 1.0
-            else:
-                values[0] = 0.0
-        
-        def value_shape(self):
-            return ()
-    
-    initial_conditions = {
-        'saturation': InitialSaturation(degree=1)
-    }
-    
-    # Parâmetros numéricos com nova estratégia
-    numerical_params = {
-        'dt': 1e-4,        # passo inicial
-        'dt_min': 1e-8,    # passo mínimo
-        'dt_max': 1e-2,    # passo máximo
-        'adaptive_dt': True
-    }
-    
-    # Criar solver
-    solver = BrinkmanTwoPhaseAdaptiveTime(
-        mesh, fluid_props, boundary_conditions, 
-        initial_conditions, numerical_params
-    )
-    
-    # Executar simulação
-    solver.run(T=1e5, impes_steps=256, save_interval=20)
-    
-    # Plotar resultados
-    solver.plot_results()
+
+    # ========== EXEMPLO COM NOVA ESTRATÉGIA ROBUSTA POR FASES ==========
+    print("\n>>> TESTANDO NOVA ESTRATÉGIA ROBUSTA POR FASES <<<\n")
+
+    # Executa com a nova estratégia robusta
+    methods_to_test = ["robust_phases", "classic", "local"]
+
+    for method in methods_to_test:
+        print(f"\n--- Testando método: {method} ---")
+
+        solver_test = BrinkmanIMPESSolver(
+            mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
+            output_dir=f"/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results_{method}",
+            mu_w=1e-3,
+            mu_o=1e-3,
+            perm_darcy=100,
+            dt=0.1,
+            adaptive_dt=True,
+            CFL_max=0.5,  # CFL inicial para Fase 1
+            dt_min=1e-8,  # dt_min mais conservativo
+            dt_max=2000.0,
+            dt_method=method,
+            checkpoint_interval=100  # Salva checkpoint a cada 100 passos
+        )
+
+        solver_test.run(T=1e5, impes_steps=256, save_interval=20)
+
+        print(f"--- Método {method} finalizado ---\n")
+
+    print("\n*** TODAS AS SIMULAÇÕES CONCLUÍDAS ***")
+    print("Compare os resultados nos diretórios:")
+    print("  - results_robust_phases/ (NOVO - Recomendado)")
+    print("  - results_classic/")
+    print("  - results_local/")
+    print("\nA estratégia 'robust_phases' deve apresentar:")
+    print("  - Maior estabilidade nas fases iniciais")
+    print("  - Crescimento controlado do passo de tempo")
+    print("  - Recuperação automática de falhas")
+    print("  - Melhor desempenho geral")
