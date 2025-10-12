@@ -1123,13 +1123,13 @@ if __name__ == "__main__":
             dt=0.1,
             adaptive_dt=True,
             CFL_max=0.5,
-            dt_min=1e-5,
-            dt_max=20.0,
+            dt_min=1e2,
+            dt_max=2000.0,
             dt_method=method,
             checkpoint_interval=0
         )
         
-        # solver_test.run(T=20.0, impes_steps=50, save_interval=20)
+        solver_test.run(T=1e5, impes_steps=256, save_interval=20)
         
         print(f"--- Método {method} finalizado ---\n")
 

@@ -1,0 +1,20 @@
+
+Solving linear variational problem.
+/usr/lib/python3/dist-packages/apport/report.py:13: DeprecationWarning: the imp module is deprecated in favour of importlib; see the module's documentation for alternative uses
+  import fnmatch, glob, traceback, errno, sys, atexit, imp, stat
+/usr/lib/python3/dist-packages/socks.py:58: DeprecationWarning: Using or importing the ABCs from 'collections' instead of from 'collections.abc' is deprecated since Python 3.3, and in 3.10 it will stop working
+  from collections import Callable
+Traceback (most recent call last):
+  File "/home/tfk/Desktop/Doutorado/Doutorado_git/Doutorado/BrinkmanBifasico/BrinkmanTwoPhaseAdaptativeTime.py", line 1132, in <module>
+    solver_test.run(T=1e5, impes_steps=256, save_interval=20)
+  File "/home/tfk/Desktop/Doutorado/Doutorado_git/Doutorado/BrinkmanBifasico/BrinkmanTwoPhaseAdaptativeTime.py", line 1047, in run
+    self.update_timestep()
+  File "/home/tfk/Desktop/Doutorado/Doutorado_git/Doutorado/BrinkmanBifasico/BrinkmanTwoPhaseAdaptativeTime.py", line 726, in update_timestep
+    self.dt = self.compute_adaptive_timestep()
+  File "/home/tfk/Desktop/Doutorado/Doutorado_git/Doutorado/BrinkmanBifasico/BrinkmanTwoPhaseAdaptativeTime.py", line 718, in compute_adaptive_timestep
+    return methods[self.dt_method]()
+  File "/home/tfk/Desktop/Doutorado/Doutorado_git/Doutorado/BrinkmanBifasico/BrinkmanTwoPhaseAdaptativeTime.py", line 531, in compute_adaptive_timestep_hybrid
+    dt_peclet = self.compute_dt_peclet()
+  File "/home/tfk/Desktop/Doutorado/Doutorado_git/Doutorado/BrinkmanBifasico/BrinkmanTwoPhaseAdaptativeTime.py", line 592, in compute_dt_peclet
+    diff_array = diffusion_num.vector().get_local()
+AttributeError: 'Product' object has no attribute 'vector'
