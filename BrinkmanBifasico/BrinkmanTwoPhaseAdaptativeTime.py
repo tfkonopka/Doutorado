@@ -1220,25 +1220,25 @@ if __name__ == "__main__":
         config_name = config_names[i]
         print(f"\n--- Testando configuração: {config_name} ---")
 
-        solver_test = BrinkmanIMPESSolver(
-            mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
-            output_dir=f"/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results_adaptive_sat_{config_name}",
-            mu_w=1e-3,
-            mu_o=1e-3,
-            perm_darcy=100,
-            dt=0.1,
-            adaptive_dt=True,
-            CFL_max=0.5,
-            dt_min=1e-8,
-            dt_max=2000.0,
-            dt_method="robust_phases",
-            checkpoint_interval=100,
-            saturation_limits=sat_config  # NOVO PARÂMETRO
-        )
+        # solver_test = BrinkmanIMPESSolver(
+        #     mesh_dir="/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/mesh",
+        #     output_dir=f"/home/tfk/Desktop/results/Brinkman/Brinkman_Biphase/Arapua24/results_adaptive_sat_{config_name}",
+        #     mu_w=1e-3,
+        #     mu_o=1e-3,
+        #     perm_darcy=100,
+        #     dt=0.1,
+        #     adaptive_dt=True,
+        #     CFL_max=0.5,
+        #     dt_min=1e-8,
+        #     dt_max=2000.0,
+        #     dt_method="robust_phases",
+        #     checkpoint_interval=100,
+        #     saturation_limits=sat_config  # NOVO PARÂMETRO
+        # )
 
-        solver_test.run(T=1e5, impes_steps=256, save_interval=20)
+        # solver_test.run(T=1e5, impes_steps=256, save_interval=20)
 
-        print(f"--- Configuração {config_name} finalizada ---\n")
+        # print(f"--- Configuração {config_name} finalizada ---\n")
 
     # ========== TESTE COM CONFIGURAÇÃO CUSTOMIZADA AVANÇADA ==========
     print("\n--- Teste Configuração Avançada ---")
@@ -1256,10 +1256,10 @@ if __name__ == "__main__":
         mu_w=1e-3,
         mu_o=1e-3,
         perm_darcy=100,
-        dt=0.05,  # dt inicial menor
+        dt=150,  # dt inicial menor
         adaptive_dt=True,
         CFL_max=0.3,  # CFL mais conservativo
-        dt_min=1e-9,  # dt_min menor
+        dt_min=100,  # dt_min menor
         dt_max=1000.0,  # dt_max menor
         dt_method="robust_phases",
         checkpoint_interval=50,
