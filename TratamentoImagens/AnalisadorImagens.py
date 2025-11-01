@@ -1,6 +1,7 @@
 import cv2
 import numpy as np
 from scipy import ndimage
+import csv
 
 def analisar_objetos_pretos(caminho_imagem):
     """
@@ -153,35 +154,107 @@ def desenhar_elipses_objetos(imagem_original, rotulos, num_objetos):
     return imagem_colorida, elipses_info
 
 
+def salvar_tabela_csv(pixels_por_objeto, elipses_info, nome_arquivo="analise_objetos.csv", densidade_px_por_mm=10.0):
+    """
+    Salva a tabela de análise em um arquivo CSV.
+    
+    Args:
+        pixels_por_objeto: Lista com número de pixels por objeto
+        elipses_info: Lista com informações das elipses
+        nome_arquivo: Nome do arquivo CSV a ser criado
+        densidade_px_por_mm: Densidade de pixels por milímetro (padrão: 10.0 px/mm)
+    """
+    # Calcular fator de conversão
+    escala_px_para_mm = 1.0 / densidade_px_por_mm
+    
+    with open(nome_arquivo, 'w', newline='', encoding='utf-8') as arquivo_csv:
+        writer = csv.writer(arquivo_csv)
+        
+        # Escrever cabeçalho com unidades em pixels e SI
+        writer.writerow([
+            'Objeto', 
+            'Pixels (px)', 'Area_Objeto (mm²)',
+            'Centro_X (px)', 'Centro_X (mm)',
+            'Centro_Y (px)', 'Centro_Y (mm)',
+            'Eixo_Maior (px)', 'Eixo_Maior (mm)',
+            'Eixo_Menor (px)', 'Eixo_Menor (mm)',
+            'Angulo (graus)', 
+            'Area_Elipse (px²)', 'Area_Elipse (mm²)',
+            'Razao (adimensional)', 
+            'Observacao'
+        ])
+        
+        # Escrever dados
+        for i, (pixels, info) in enumerate(zip(pixels_por_objeto, elipses_info), 1):
+            if info['centro'] is not None:
+                # Conversões para SI (mm e mm²)
+                area_objeto_mm2 = pixels * (escala_px_para_mm ** 2)
+                centro_x_mm = info['centro'][0] * escala_px_para_mm
+                centro_y_mm = info['centro'][1] * escala_px_para_mm
+                eixo_maior_mm = info['eixo_maior'] * escala_px_para_mm
+                eixo_menor_mm = info['eixo_menor'] * escala_px_para_mm
+                area_elipse_mm2 = info['area_elipse'] * (escala_px_para_mm ** 2)
+                
+                writer.writerow([
+                    i,
+                    pixels,
+                    f"{area_objeto_mm2:.4f}",
+                    f"{info['centro'][0]:.2f}",
+                    f"{centro_x_mm:.4f}",
+                    f"{info['centro'][1]:.2f}",
+                    f"{centro_y_mm:.4f}",
+                    f"{info['eixo_maior']:.2f}",
+                    f"{eixo_maior_mm:.4f}",
+                    f"{info['eixo_menor']:.2f}",
+                    f"{eixo_menor_mm:.4f}",
+                    f"{info['angulo']:.2f}",
+                    f"{info['area_elipse']:.2f}",
+                    f"{area_elipse_mm2:.4f}",
+                    f"{pixels / info['area_elipse']:.4f}",
+                    ""
+                ])
+            else:
+                nota = info.get('nota', 'Não foi possível ajustar elipse')
+                writer.writerow([i, pixels, '', '', '', '', '', '', '', '', '', '', '', '', '', nota])
+
+
 def imprimir_resultados(num_objetos, pixels_por_objeto, elipses_info):
     """
-    Imprime os resultados da análise de forma formatada.
+    Imprime os resultados da análise de forma formatada em tabela.
     """
-    print("=" * 70)
+    print("=" * 120)
     print("ANÁLISE DE OBJETOS PRETOS COM ELIPSES DE ÁREA MÍNIMA")
-    print("=" * 70)
+    print("=" * 120)
     print(f"\nQuantidade total de objetos identificados: {num_objetos}")
-    print("\n" + "-" * 70)
+    print("\n" + "-" * 120)
     print("Informações detalhadas por objeto:")
-    print("-" * 70)
+    print("-" * 120)
     
+    # Cabeçalho da tabela
+    print(f"{'Objeto':>7} | {'Pixels':>7} | {'Centro (x, y)':>18} | {'Eixo Maior':>12} | {'Eixo Menor':>12} | {'Ângulo':>8} | {'Área Elipse':>13} | {'Razão':>7}")
+    print("-" * 120)
+    
+    # Linhas da tabela
     for i, (pixels, info) in enumerate(zip(pixels_por_objeto, elipses_info), 1):
-        print(f"\nObjeto {i}:")
-        print(f"  Pixels: {pixels}")
-        
         if info['centro'] is not None:
-            print(f"  Centro da elipse: ({info['centro'][0]:.2f}, {info['centro'][1]:.2f})")
-            print(f"  Eixo maior: {info['eixo_maior']:.2f} pixels")
-            print(f"  Eixo menor: {info['eixo_menor']:.2f} pixels")
-            print(f"  Ângulo: {info['angulo']:.2f}°")
-            print(f"  Área da elipse: {info['area_elipse']:.2f} pixels²")
-            print(f"  Razão (pixels objeto / área elipse): {pixels / info['area_elipse']:.4f}")
+            centro_str = f"({info['centro'][0]:.1f}, {info['centro'][1]:.1f})"
+            eixo_maior = f"{info['eixo_maior']:.2f}"
+            eixo_menor = f"{info['eixo_menor']:.2f}"
+            angulo = f"{info['angulo']:.2f}°"
+            area = f"{info['area_elipse']:.2f}"
+            razao = f"{pixels / info['area_elipse']:.4f}"
+            
+            print(f"{i:>7} | {pixels:>7} | {centro_str:>18} | {eixo_maior:>12} | {eixo_menor:>12} | {angulo:>8} | {area:>13} | {razao:>7}")
         else:
-            print(f"  {info.get('nota', 'Não foi possível ajustar elipse')}")
+            nota = info.get('nota', 'N/A')
+            print(f"{i:>7} | {pixels:>7} | {'N/A':>18} | {'N/A':>12} | {'N/A':>12} | {'N/A':>8} | {'N/A':>13} | {'N/A':>7}  ({nota})")
     
-    print("\n" + "=" * 70)
+    print("-" * 120)
+    
+    # Resumo estatístico
+    print("\n" + "=" * 120)
     print("RESUMO ESTATÍSTICO")
-    print("=" * 70)
+    print("=" * 120)
     if pixels_por_objeto:
         print(f"Menor objeto: {min(pixels_por_objeto)} pixels")
         print(f"Maior objeto: {max(pixels_por_objeto)} pixels")
@@ -193,7 +266,7 @@ def imprimir_resultados(num_objetos, pixels_por_objeto, elipses_info):
             print(f"\nMenor área de elipse: {min(areas_validas):.2f} pixels²")
             print(f"Maior área de elipse: {max(areas_validas):.2f} pixels²")
             print(f"Média de área de elipse: {np.mean(areas_validas):.2f} pixels²")
-    print("=" * 70)
+    print("=" * 120)
 
 
 # Exemplo de uso
@@ -211,9 +284,16 @@ if __name__ == "__main__":
         # Imprimir resultados
         imprimir_resultados(num_objetos, pixels_por_objeto, elipses_info)
         
+        # Salvar tabela em CSV
+        # IMPORTANTE: Ajuste o valor de densidade_px_por_mm conforme sua calibração
+        # Exemplo: se você tem 20 pixels por milímetro, use densidade_px_por_mm=20
+        densidade_px_por_mm = 10.0  # Valor padrão: 10 pixels/mm
+        salvar_tabela_csv(pixels_por_objeto, elipses_info, densidade_px_por_mm=densidade_px_por_mm)
+        print(f"\nTabela salva como 'analise_objetos.csv' (densidade: {densidade_px_por_mm} px/mm)")
+        
         # Salvar imagens
         cv2.imwrite("objetos_com_elipses.png", imagem_com_elipses)
-        print("\nImagem com elipses salva como 'objetos_com_elipses.png'")
+        print("Imagem com elipses salva como 'objetos_com_elipses.png'")
         
         # Opcional: Criar visualização com objetos coloridos também
         imagem_colorida = np.zeros((*rotulos.shape, 3), dtype=np.uint8)
